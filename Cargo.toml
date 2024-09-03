@@ -1,0 +1,10 @@
+[package]
+name = "life-logging"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cpal = "0.15.3"
+ringbuf = "0.4.4"
+rocket = "0.5.1"
+
