@@ -22,19 +22,23 @@ Project Plan:
    - Allow customization of buffer duration, sample rate, etc.
 */
 
-use ringbuf::{traits::*, HeapRb};
+use ringbuf::{HeapRb, traits::*};
+
+const BUFFER_SIZE: usize = 10;
 
 fn main() {
-    // Create a ring buffer with capacity for 10 i16 samples
-    let mut rb = HeapRb::<i16>::new(10);
-    let (mut producer, mut consumer) = rb.split_ref();
+    // Create a ring buffer with capacity for BUFFER_SIZE i16 samples
+    let rb = HeapRb::<i16>::new(BUFFER_SIZE);
+    let (mut producer, mut consumer) = rb.split();
 
-    // Add some samples
+    // Push samples
     for i in 0..5 {
-        producer.try_push(i as i16).unwrap();
+        if let Err(e) = producer.try_push(i as i16) {
+            println!("Failed to push sample {}: {:?}", i, e);
+        }
     }
 
-    // Read and print the samples
+    // Pop and print samples
     while let Some(item) = consumer.try_pop() {
         println!("Got sample: {}", item);
     }
