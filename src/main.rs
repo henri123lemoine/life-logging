@@ -22,24 +22,57 @@ Project Plan:
    - Allow customization of buffer duration, sample rate, etc.
 */
 
-use ringbuf::{HeapRb, traits::*};
+use rb::*;
+use std::thread;
+use std::time::Duration;
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use rocket::{self, get, post, routes};
 
-const BUFFER_SIZE: usize = 10;
+const BUFFER_SIZE: usize = 48000 * 300; // 300 seconds of audio at 48kHz
 
-fn main() {
-    // Create a ring buffer with capacity for BUFFER_SIZE i16 samples
-    let rb = HeapRb::<i16>::new(BUFFER_SIZE);
-    let (mut producer, mut consumer) = rb.split();
+fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let rb = SpscRb::new(BUFFER_SIZE);
+    let (prod, cons) = (rb.producer(), rb.consumer());
 
-    // Push samples
-    for i in 0..5 {
-        if let Err(e) = producer.try_push(i as i16) {
-            println!("Failed to push sample {}: {:?}", i, e);
-        }
+    // Audio capture thread
+    thread::spawn(move || {
+        let host = cpal::default_host();
+        let device = host.default_input_device().expect("no input device available");
+        let config = device.default_input_config().unwrap();
+
+        let stream = device.build_input_stream(
+            &config.into(),
+            move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                let _ = prod.write_blocking(data);
+            },
+            |err| eprintln!("an error occurred on stream: {}", err),
+            Some(Duration::from_secs(2)) // Added timeout parameter
+        ).unwrap();
+
+        stream.play().unwrap();
+
+        std::thread::park(); // Keep the thread alive
+    });
+
+    // Web server thread
+    thread::spawn(move || {
+        rocket::build().mount("/", routes![start_recording, stop_recording]).launch();
+    });
+
+    // Main thread can handle other tasks or just wait
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(1));
     }
+}
 
-    // Pop and print samples
-    while let Some(item) = consumer.try_pop() {
-        println!("Got sample: {}", item);
-    }
+#[get("/start")]
+fn start_recording() -> &'static str {
+    // Implement start recording logic
+    "Recording started"
+}
+
+#[get("/stop")]
+fn stop_recording() -> &'static str {
+    // Implement stop recording logic
+    "Recording stopped"
 }
