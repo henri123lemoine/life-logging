@@ -23,3 +23,7 @@ life-logging: A Rust-based continuous audio recording service
 5. Add configuration options
    - Allow customization of buffer duration, sample rate, etc.
 
+## Links
+
+- https://github.com/RustAudio/cpal
+
