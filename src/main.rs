@@ -103,17 +103,21 @@ async fn get_audio(
     let seconds = params.seconds.unwrap_or(MAX_BUFFER_DURATION);
     let samples_to_read = seconds * SAMPLE_RATE as usize;
 
-    let buffer = state.ring_buffer.lock().unwrap();
+    let mut buffer = state.ring_buffer.lock().unwrap();
     let consumer = buffer.consumer();
-    let mut audio_data = Vec::with_capacity(samples_to_read);
+    let mut audio_data = vec![0.0; samples_to_read];
     let read = consumer.read(&mut audio_data);
-    match read {
-        Ok(read) => println!("Read {} samples from ring buffer", read),
-        Err(e) => eprintln!("Error reading from ring buffer: {:?}", e),
-    }
-
+    
     println!("Ring buffer capacity: {}", buffer.capacity());
     println!("Ring buffer count: {}", buffer.count());
+    
+    match read {
+        Ok(read) => {
+            println!("Read {} samples from ring buffer", read);
+            audio_data.truncate(read);
+        },
+        Err(e) => eprintln!("Error reading from ring buffer: {:?}", e),
+    }
 
     if audio_data.iter().any(|&sample| sample != 0.0) {
         println!("Detected non-zero audio in buffer");
@@ -136,7 +140,7 @@ async fn get_audio(
     let mut wav_buffer = Cursor::new(Vec::new());
     {
         let mut writer = WavWriter::new(&mut wav_buffer, spec).unwrap();
-        for &sample in audio_data.iter().take(samples_to_read) {
+        for &sample in audio_data.iter() {
             let value = (sample * 32767.0) as i16;
             writer.write_sample(value).unwrap();
         }
