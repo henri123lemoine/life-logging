@@ -92,28 +92,32 @@ async fn audio_processing_task(
     write_position: Arc<AtomicUsize>
 ) {
     while let Some(data) = audio_receiver.recv().await {
-        let buffer = ring_buffer.lock().unwrap();
+        let mut buffer = ring_buffer.lock().unwrap();
         let producer = buffer.producer();
+        let buffer_capacity = buffer.capacity();
         let current_position = write_position.load(Ordering::Relaxed);
-        let new_position = (current_position + data.len()) % buffer.capacity();
+        let data_len = data.len();
         
-        if new_position < current_position {
-            // Wrap around
-            let first_part = &data[..buffer.capacity() - current_position];
-            let second_part = &data[buffer.capacity() - current_position..];
-            if let Err(e) = producer.write(first_part) {
-                eprintln!("Error writing first part to ring buffer: {:?}", e);
-            }
-            if let Err(e) = producer.write(second_part) {
-                eprintln!("Error writing second part to ring buffer: {:?}", e);
-            }
+        // Calculate how much space is available in the buffer
+        let available_space = buffer_capacity - current_position;
+        
+        if data_len <= available_space {
+            // If there's enough space, write the entire data
+            let _ = producer.write(&data);
+            write_position.store((current_position + data_len) % buffer_capacity, Ordering::Relaxed);
         } else {
-            if let Err(e) = producer.write(&data) {
-                eprintln!("Error writing to ring buffer: {:?}", e);
-            }
+            // If there's not enough space, write what we can and wrap around
+            let first_part = &data[..available_space];
+            let second_part = &data[available_space..];
+            let _ = producer.write(first_part);
+            
+            // Reset the write position to the beginning of the buffer
+            write_position.store(0, Ordering::Relaxed);
+            
+            // Write the remaining data at the beginning of the buffer
+            let _ = producer.write(second_part);
+            write_position.store(second_part.len(), Ordering::Relaxed);
         }
-        
-        write_position.store(new_position, Ordering::Relaxed);
     }
 }
 
@@ -139,20 +143,21 @@ async fn get_audio(
     println!("Requested samples to read: {}", samples_to_read);
 
     let mut audio_data = vec![0.0; samples_to_read];
-    let read = if write_pos >= samples_to_read {
-        // If we have enough data, read from (write_pos - samples_to_read) to write_pos
-        let start = write_pos - samples_to_read;
-        consumer.read(&mut audio_data)
+    let read = if samples_to_read <= write_pos {
+        // Read from (write_pos - samples_to_read) to write_pos
+        let start = (write_pos + buffer_size - samples_to_read) % buffer_size;
+        if start < write_pos {
+            let first_part = consumer.read(&mut audio_data[..buffer_size - start]);
+            let second_part = consumer.read(&mut audio_data[buffer_size - start..]);
+            first_part.and_then(|_| second_part)
+        } else {
+            consumer.read(&mut audio_data)
+        }
     } else {
-        // If we don't have enough data, read what we have
-        let first_part = consumer.read(&mut audio_data[..write_pos]);
-        let second_part = consumer.read(&mut audio_data[write_pos..]);
-        first_part.and_then(|_| second_part)
+        // Read the entire buffer
+        consumer.read(&mut audio_data[..write_pos])
     };
 
-    println!("Ring buffer capacity: {}", buffer_size);
-    println!("Ring buffer write position: {}", write_pos);
-    
     match read {
         Ok(read) => println!("Read {} samples from ring buffer", read),
         Err(e) => eprintln!("Error reading from ring buffer: {:?}", e),
