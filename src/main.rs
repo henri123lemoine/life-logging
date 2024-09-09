@@ -56,10 +56,13 @@ fn setup_audio_capture(is_recording: Arc<Mutex<bool>>, audio_sender: mpsc::Sende
     let device = host.default_input_device().expect("no input device available");
     let config = device.default_input_config().unwrap();
 
+    println!("Audio input config: {:?}", config);  // Debug print
+
     let stream = device.build_input_stream(
         &config.into(),
         move |data: &[f32], _: &cpal::InputCallbackInfo| {
             if *is_recording.lock().unwrap() {
+                println!("Captured {} samples", data.len());  // Debug print
                 let _ = audio_sender.try_send(data.to_vec());
             }
         },
@@ -68,6 +71,7 @@ fn setup_audio_capture(is_recording: Arc<Mutex<bool>>, audio_sender: mpsc::Sende
     ).unwrap();
 
     stream.play().unwrap();
+    println!("Audio stream started");  // Debug print
 
     // Keep the stream alive by not dropping it
     std::mem::forget(stream);
@@ -76,7 +80,12 @@ fn setup_audio_capture(is_recording: Arc<Mutex<bool>>, audio_sender: mpsc::Sende
 async fn audio_processing_task(ring_buffer: Arc<SpscRb<f32>>, mut audio_receiver: mpsc::Receiver<Vec<f32>>) {
     let producer = ring_buffer.producer();
     while let Some(data) = audio_receiver.recv().await {
-        let _ = producer.write(&data);
+        println!("Received {} samples for processing", data.len());  // Debug print
+        let written = producer.write(&data);
+        match written {
+            Ok(written) => println!("Wrote {} samples to ring buffer", written),
+            Err(e) => eprintln!("Error writing to ring buffer: {:?}", e),
+        }
     }
 }
 
@@ -93,13 +102,20 @@ async fn stop_recording(State(state): State<Arc<AppState>>) -> &'static str {
 async fn get_audio(State(state): State<Arc<AppState>>) -> Vec<u8> {
     let consumer = state.ring_buffer.consumer();
     let mut audio_data = Vec::new();
-    let _ = consumer.read(&mut audio_data);
-    
+    let read = consumer.read(&mut audio_data);
+    match read {
+        Ok(read) => println!("Read {} samples from ring buffer", read),
+        Err(e) => eprintln!("Error reading from ring buffer: {:?}", e),
+    }
+
     // Convert f32 samples to bytes (assuming 16-bit PCM)
-    audio_data.iter()
-        .flat_map(|&sample| {
-            let value = (sample * 32767.0) as i16;
-            value.to_le_bytes().to_vec()
-        })
-        .collect()
+    let bytes: Vec<u8> = audio_data.iter()
+    .flat_map(|&sample| {
+        let value = (sample * 32767.0) as i16;
+        value.to_le_bytes().to_vec()
+    })
+    .collect();
+    
+    println!("Returning {} bytes of audio data", bytes.len());  // Debug print
+    bytes
 }
