@@ -1,6 +1,8 @@
 use axum::{
-    routing::{get, post},
+    routing::get,
     Router, extract::State, extract::Query,
+    response::IntoResponse,
+    http::{header, StatusCode},
 };
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -9,10 +11,12 @@ use rb::*;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::time::Duration;
 use serde::Deserialize;
+use hound::{WavWriter, WavSpec};
+use std::io::Cursor;
 
-const SAMPLE_RATE: usize = 24000; // 24 kHz
+const SAMPLE_RATE: u32 = 24000; // 24 kHz
 const MAX_BUFFER_DURATION: usize = 5 * 60; // 5 minutes
-const BUFFER_SIZE: usize = SAMPLE_RATE * MAX_BUFFER_DURATION;
+const BUFFER_SIZE: usize = SAMPLE_RATE as usize * MAX_BUFFER_DURATION;
 const ADDR: ([u8; 4], u16) = ([127, 0, 0, 1], 3000);
 
 struct AppState {
@@ -59,7 +63,6 @@ fn setup_audio_capture(audio_sender: mpsc::Sender<Vec<f32>>) {
     let stream = device.build_input_stream(
         &config.into(),
         move |data: &[f32], _: &cpal::InputCallbackInfo| {
-            println!("Captured {} samples", data.len());
             let _ = audio_sender.try_send(data.to_vec());
         },
         |err| eprintln!("An error occurred on stream: {}", err),
@@ -74,12 +77,11 @@ fn setup_audio_capture(audio_sender: mpsc::Sender<Vec<f32>>) {
 
 async fn audio_processing_task(ring_buffer: Arc<Mutex<SpscRb<f32>>>, mut audio_receiver: mpsc::Receiver<Vec<f32>>) {
     while let Some(data) = audio_receiver.recv().await {
-        println!("Received {} samples for processing", data.len());
-        let mut buffer = ring_buffer.lock().unwrap();
+        let buffer = ring_buffer.lock().unwrap();
         let producer = buffer.producer();
         let written = producer.write(&data);
         match written {
-            Ok(written) => println!("Wrote {} samples to ring buffer", written),
+            Ok(_) => {},  // Do nothing for the Ok case
             Err(e) => eprintln!("Error writing to ring buffer: {:?}", e),
         }
     }
@@ -93,9 +95,9 @@ struct AudioQuery {
 async fn get_audio(
     State(state): State<Arc<AppState>>,
     Query(params): Query<AudioQuery>,
-) -> Vec<u8> {
+) -> impl IntoResponse {
     let seconds = params.seconds.unwrap_or(MAX_BUFFER_DURATION);
-    let samples_to_read = seconds * SAMPLE_RATE;
+    let samples_to_read = seconds * SAMPLE_RATE as usize;
 
     let buffer = state.ring_buffer.lock().unwrap();
     let consumer = buffer.consumer();
@@ -111,15 +113,31 @@ async fn get_audio(
         audio_data.resize(samples_to_read, 0.0);
     }
 
-    // Convert f32 samples to bytes (16-bit PCM)
-    let bytes: Vec<u8> = audio_data.iter()
-        .take(samples_to_read)
-        .flat_map(|&sample| {
-            let value = (sample * 32767.0) as i16;
-            value.to_le_bytes().to_vec()
-        })
-        .collect();
-    
-    println!("Returning {} bytes of audio data", bytes.len());
-    bytes
+    // Create a WAV file in memory
+    let spec = WavSpec {
+        channels: 1,
+        sample_rate: SAMPLE_RATE,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut wav_buffer = Cursor::new(Vec::new());
+    {
+        let mut writer = WavWriter::new(&mut wav_buffer, spec).unwrap();
+        for &sample in audio_data.iter().take(samples_to_read) {
+            writer.write_sample((sample * 32767.0) as i16).unwrap();
+        }
+        writer.finalize().unwrap();
+    }
+
+    let wav_data = wav_buffer.into_inner();
+    println!("Returning {} bytes of WAV audio data", wav_data.len());
+
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "audio/wav"),
+            (header::CONTENT_DISPOSITION, "attachment; filename=\"audio.wav\""),
+        ],
+        wav_data,
+    )
 }
