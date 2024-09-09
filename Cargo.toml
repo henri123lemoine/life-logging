@@ -9,6 +9,8 @@ axum = "0.7.5"
 axum-server = "0.7.1"
 cpal = "0.15.3"
 env_logger = "0.11.5"
+hound = "3.5.1"
 log = "0.4.22"
 rb = "0.4.1"
+serde = { version = "1.0.210", features = ["derive"] }
 tokio = { version = "1.40.0", features = ["rt", "rt-multi-thread", "macros"] }
