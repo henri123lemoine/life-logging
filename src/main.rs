@@ -9,7 +9,10 @@ use rb::*;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::time::Duration;
 
-const BUFFER_SIZE: usize = 48000 * 300; // 300 seconds of audio at 48kHz
+const SAMPLE_RATE: usize = 24000; // 24 kHz
+const BUFFER_DURATION: usize = 5 * 60; // 5 minutes
+const BUFFER_SIZE: usize = SAMPLE_RATE * BUFFER_DURATION;
+const ADDR: ([u8; 4], u16) = ([127, 0, 0, 1], 3000);
 
 struct AppState {
     ring_buffer: Arc<SpscRb<f32>>,
@@ -43,7 +46,8 @@ async fn main() {
         .route("/get_audio", get(get_audio))
         .with_state(app_state);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    // let addr = SocketAddr::from(([127, 0, 0, 1], PORT));
+    let addr = SocketAddr::from(ADDR);
     println!("listening on {}", addr);
     axum_server::bind(addr)
         .serve(app.into_make_service())
