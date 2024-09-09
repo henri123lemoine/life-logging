@@ -5,8 +5,10 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.86"
+axum = "0.7.5"
+axum-server = "0.7.1"
 cpal = "0.15.3"
 env_logger = "0.11.5"
 log = "0.4.22"
 rb = "0.4.1"
-rocket = "0.5.1"
+tokio = { version = "1.40.0", features = ["rt", "rt-multi-thread", "macros"] }
