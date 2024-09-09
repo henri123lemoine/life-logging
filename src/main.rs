@@ -13,6 +13,7 @@ use std::time::Duration;
 use serde::Deserialize;
 use hound::{WavWriter, WavSpec};
 use std::io::Cursor;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 const SAMPLE_RATE: u32 = 48000; // 48 kHz
 const MAX_BUFFER_DURATION: usize = 5; // 5 seconds
@@ -23,6 +24,7 @@ const ADDR: ([u8; 4], u16) = ([127, 0, 0, 1], 3000);
 struct AppState {
     ring_buffer: Arc<Mutex<SpscRb<f32>>>,
     audio_sender: mpsc::Sender<Vec<f32>>,
+    write_position: Arc<AtomicUsize>,
 }
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
@@ -33,10 +35,15 @@ async fn main() {
     let app_state = Arc::new(AppState {
         ring_buffer: ring_buffer.clone(),
         audio_sender,
+        write_position: Arc::new(AtomicUsize::new(0)),
     });
 
     // Start audio processing task
-    tokio::spawn(audio_processing_task(ring_buffer.clone(), audio_receiver));
+    tokio::spawn(audio_processing_task(
+        ring_buffer.clone(),
+        audio_receiver,
+        app_state.write_position.clone()
+    ));
 
     // Set up audio capture
     setup_audio_capture(app_state.audio_sender.clone());
@@ -79,15 +86,34 @@ fn setup_audio_capture(audio_sender: mpsc::Sender<Vec<f32>>) {
     std::mem::forget(stream);
 }
 
-async fn audio_processing_task(ring_buffer: Arc<Mutex<SpscRb<f32>>>, mut audio_receiver: mpsc::Receiver<Vec<f32>>) {
+async fn audio_processing_task(
+    ring_buffer: Arc<Mutex<SpscRb<f32>>>,
+    mut audio_receiver: mpsc::Receiver<Vec<f32>>,
+    write_position: Arc<AtomicUsize>
+) {
     while let Some(data) = audio_receiver.recv().await {
         let buffer = ring_buffer.lock().unwrap();
         let producer = buffer.producer();
-        let written = producer.write(&data);
-        match written {
-            Ok(_) => {},  // Do nothing for the Ok case
-            Err(e) => eprintln!("Error writing to ring buffer: {:?}", e),
+        let current_position = write_position.load(Ordering::Relaxed);
+        let new_position = (current_position + data.len()) % buffer.capacity();
+        
+        if new_position < current_position {
+            // Wrap around
+            let first_part = &data[..buffer.capacity() - current_position];
+            let second_part = &data[buffer.capacity() - current_position..];
+            if let Err(e) = producer.write(first_part) {
+                eprintln!("Error writing first part to ring buffer: {:?}", e);
+            }
+            if let Err(e) = producer.write(second_part) {
+                eprintln!("Error writing second part to ring buffer: {:?}", e);
+            }
+        } else {
+            if let Err(e) = producer.write(&data) {
+                eprintln!("Error writing to ring buffer: {:?}", e);
+            }
         }
+        
+        write_position.store(new_position, Ordering::Relaxed);
     }
 }
 
@@ -101,21 +127,34 @@ async fn get_audio(
     Query(params): Query<AudioQuery>,
 ) -> impl IntoResponse {
     let seconds = params.seconds.unwrap_or(MAX_BUFFER_DURATION);
-    let samples_to_read = seconds * SAMPLE_RATE as usize;
+    let samples_to_read = std::cmp::min(seconds * SAMPLE_RATE as usize, BUFFER_SIZE);
 
-    let mut buffer = state.ring_buffer.lock().unwrap();
+    let buffer = state.ring_buffer.lock().unwrap();
     let consumer = buffer.consumer();
+    let write_pos = state.write_position.load(Ordering::Relaxed);
+    let buffer_size = buffer.capacity();
+
+    println!("Ring buffer capacity: {}", buffer_size);
+    println!("Ring buffer write position: {}", write_pos);
+    println!("Requested samples to read: {}", samples_to_read);
+
     let mut audio_data = vec![0.0; samples_to_read];
-    let read = consumer.read(&mut audio_data);
-    
-    println!("Ring buffer capacity: {}", buffer.capacity());
-    println!("Ring buffer count: {}", buffer.count());
+    let read = if write_pos >= samples_to_read {
+        // If we have enough data, read from (write_pos - samples_to_read) to write_pos
+        let start = write_pos - samples_to_read;
+        consumer.read(&mut audio_data)
+    } else {
+        // If we don't have enough data, read what we have
+        let first_part = consumer.read(&mut audio_data[..write_pos]);
+        let second_part = consumer.read(&mut audio_data[write_pos..]);
+        first_part.and_then(|_| second_part)
+    };
+
+    println!("Ring buffer capacity: {}", buffer_size);
+    println!("Ring buffer write position: {}", write_pos);
     
     match read {
-        Ok(read) => {
-            println!("Read {} samples from ring buffer", read);
-            audio_data.truncate(read);
-        },
+        Ok(read) => println!("Read {} samples from ring buffer", read),
         Err(e) => eprintln!("Error reading from ring buffer: {:?}", e),
     }
 
