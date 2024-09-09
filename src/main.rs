@@ -14,8 +14,9 @@ use serde::Deserialize;
 use hound::{WavWriter, WavSpec};
 use std::io::Cursor;
 
-const SAMPLE_RATE: u32 = 24000; // 24 kHz
-const MAX_BUFFER_DURATION: usize = 5 * 60; // 5 minutes
+const SAMPLE_RATE: u32 = 48000; // 48 kHz
+const MAX_BUFFER_DURATION: usize = 5; // 5 seconds
+// const MAX_BUFFER_DURATION: usize = 5 * 60; // 5 minutes
 const BUFFER_SIZE: usize = SAMPLE_RATE as usize * MAX_BUFFER_DURATION;
 const ADDR: ([u8; 4], u16) = ([127, 0, 0, 1], 3000);
 
@@ -60,9 +61,12 @@ fn setup_audio_capture(audio_sender: mpsc::Sender<Vec<f32>>) {
 
     println!("Audio input config: {:?}", config);
 
-    let stream = device.build_input_stream(
+    let stream: cpal::Stream = device.build_input_stream(
         &config.into(),
         move |data: &[f32], _: &cpal::InputCallbackInfo| {
+            if !data.iter().any(|&sample| sample != 0.0) {
+                println!("Detected no audio input");
+            }
             let _ = audio_sender.try_send(data.to_vec());
         },
         |err| eprintln!("An error occurred on stream: {}", err),
@@ -108,6 +112,15 @@ async fn get_audio(
         Err(e) => eprintln!("Error reading from ring buffer: {:?}", e),
     }
 
+    println!("Ring buffer capacity: {}", buffer.capacity());
+    println!("Ring buffer count: {}", buffer.count());
+
+    if audio_data.iter().any(|&sample| sample != 0.0) {
+        println!("Detected non-zero audio in buffer");
+    } else {
+        println!("Warning: All zero samples in buffer");
+    }
+
     // If we read fewer samples than requested, pad with silence
     if audio_data.len() < samples_to_read {
         audio_data.resize(samples_to_read, 0.0);
@@ -124,7 +137,8 @@ async fn get_audio(
     {
         let mut writer = WavWriter::new(&mut wav_buffer, spec).unwrap();
         for &sample in audio_data.iter().take(samples_to_read) {
-            writer.write_sample((sample * 32767.0) as i16).unwrap();
+            let value = (sample * 32767.0) as i16;
+            writer.write_sample(value).unwrap();
         }
         writer.finalize().unwrap();
     }
