@@ -3,7 +3,9 @@ use axum::{
     Router, extract::State, extract::Query,
     response::IntoResponse,
     http::{header, StatusCode},
+    Json,
 };
+use serde_json::json;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
@@ -16,8 +18,7 @@ use std::io::Cursor;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 const SAMPLE_RATE: u32 = 48000; // 48 kHz
-const MAX_BUFFER_DURATION: usize = 5; // 5 seconds
-// const MAX_BUFFER_DURATION: usize = 5 * 60; // 5 minutes
+const MAX_BUFFER_DURATION: usize = 60; // 60 seconds
 const BUFFER_SIZE: usize = SAMPLE_RATE as usize * MAX_BUFFER_DURATION;
 const ADDR: ([u8; 4], u16) = ([127, 0, 0, 1], 3000);
 
@@ -25,6 +26,7 @@ struct AppState {
     ring_buffer: Arc<Mutex<SpscRb<f32>>>,
     audio_sender: mpsc::Sender<Vec<f32>>,
     write_position: Arc<AtomicUsize>,
+    start_time: std::time::SystemTime,
 }
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
@@ -36,6 +38,7 @@ async fn main() {
         ring_buffer: ring_buffer.clone(),
         audio_sender,
         write_position: Arc::new(AtomicUsize::new(0)),
+        start_time: std::time::SystemTime::now(),
     });
 
     // Start audio processing task
@@ -50,6 +53,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(|| async { "Audio Recording Server" }))
+        .route("/health", get(health_check))
         .route("/get_audio", get(get_audio))
         .with_state(app_state);
 
@@ -59,6 +63,15 @@ async fn main() {
         .serve(app.into_make_service())
         .await
         .unwrap();
+}
+
+async fn health_check(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+    let uptime = state.start_time.elapsed().unwrap_or_default();
+    Json(json!({
+        "status": "ok",
+        "uptime": format!("{}s", uptime.as_secs()),
+        "message": "Audio Recording Server is running"
+    }))
 }
 
 fn setup_audio_capture(audio_sender: mpsc::Sender<Vec<f32>>) {
@@ -92,32 +105,24 @@ async fn audio_processing_task(
     write_position: Arc<AtomicUsize>
 ) {
     while let Some(data) = audio_receiver.recv().await {
-        let mut buffer = ring_buffer.lock().unwrap();
+        let buffer = ring_buffer.lock().unwrap();
         let producer = buffer.producer();
         let buffer_capacity = buffer.capacity();
         let current_position = write_position.load(Ordering::Relaxed);
         let data_len = data.len();
         
-        // Calculate how much space is available in the buffer
-        let available_space = buffer_capacity - current_position;
+        // Write data, wrapping around if necessary
+        let first_write = std::cmp::min(buffer_capacity - current_position, data_len);
+        let _ = producer.write(&data[..first_write]);
         
-        if data_len <= available_space {
-            // If there's enough space, write the entire data
-            let _ = producer.write(&data);
-            write_position.store((current_position + data_len) % buffer_capacity, Ordering::Relaxed);
-        } else {
-            // If there's not enough space, write what we can and wrap around
-            let first_part = &data[..available_space];
-            let second_part = &data[available_space..];
-            let _ = producer.write(first_part);
-            
-            // Reset the write position to the beginning of the buffer
-            write_position.store(0, Ordering::Relaxed);
-            
-            // Write the remaining data at the beginning of the buffer
-            let _ = producer.write(second_part);
-            write_position.store(second_part.len(), Ordering::Relaxed);
+        if first_write < data_len {
+            let _ = producer.write(&data[first_write..]);
         }
+        
+        let new_position = (current_position + data_len) % buffer_capacity;
+        write_position.store(new_position, Ordering::Relaxed);
+        
+        println!("Wrote {} samples to ring buffer, new write position: {}", data_len, new_position);
     }
 }
 
@@ -143,25 +148,31 @@ async fn get_audio(
     println!("Requested samples to read: {}", samples_to_read);
 
     let mut audio_data = vec![0.0; samples_to_read];
-    let read = if samples_to_read <= write_pos {
-        // Read from (write_pos - samples_to_read) to write_pos
-        let start = (write_pos + buffer_size - samples_to_read) % buffer_size;
-        if start < write_pos {
-            let first_part = consumer.read(&mut audio_data[..buffer_size - start]);
-            let second_part = consumer.read(&mut audio_data[buffer_size - start..]);
-            first_part.and_then(|_| second_part)
-        } else {
-            consumer.read(&mut audio_data)
-        }
-    } else {
-        // Read the entire buffer
-        consumer.read(&mut audio_data[..write_pos])
-    };
+    let mut total_read = 0;
 
-    match read {
-        Ok(read) => println!("Read {} samples from ring buffer", read),
-        Err(e) => eprintln!("Error reading from ring buffer: {:?}", e),
+    // Read from current position to end
+    let read_to_end = consumer.read(&mut audio_data[..std::cmp::min(buffer_size - write_pos, samples_to_read)]);
+    match read_to_end {
+        Ok(read) => {
+            total_read += read;
+            println!("Read {} samples from current position to end", read);
+        },
+        Err(e) => eprintln!("Error reading from ring buffer (current to end): {:?}", e),
     }
+
+    // If we need more data, read from start to current position
+    if total_read < samples_to_read {
+        let read_from_start = consumer.read(&mut audio_data[total_read..]);
+        match read_from_start {
+            Ok(read) => {
+                total_read += read;
+                println!("Read {} samples from start to current position", read);
+            },
+            Err(e) => eprintln!("Error reading from ring buffer (start to current): {:?}", e),
+        }
+    }
+
+    println!("Total read {} samples from ring buffer", total_read);
 
     if audio_data.iter().any(|&sample| sample != 0.0) {
         println!("Detected non-zero audio in buffer");
@@ -170,8 +181,10 @@ async fn get_audio(
     }
 
     // If we read fewer samples than requested, pad with silence
-    if audio_data.len() < samples_to_read {
+    if total_read < samples_to_read {
+        audio_data.truncate(total_read);
         audio_data.resize(samples_to_read, 0.0);
+        println!("Padded with {} samples of silence", samples_to_read - total_read);
     }
 
     // Create a WAV file in memory
