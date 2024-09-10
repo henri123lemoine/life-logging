@@ -1,6 +1,6 @@
 # Life-Logging
 
-Life-Logging is a Rust-based continuous audio recording service that captures and serves the most recent audio data.
+Life-Logging is a Rust-based project for life-logging. It involves a continuous audio recording service that captures and serves the most recent audio data. This project is intended to be used for personal use.
 
 ## Features
 
@@ -56,8 +56,10 @@ Current configuration is set in `src/main.rs`:
 - Additional audio format support (MP3, OGG)
 - Enhanced visualizations and customization options
 - Metrics and monitoring
-- Authentication and rate limiting for public deployments
-- Long-term storage and retrieval of audio data (e.g. save audio data to disk every minute, and persist in s3)
+- Long-term storage and retrieval of audio data (e.g. save audio data to disk every minute, and persist in s3 once a day)
+- Websocket support for real-time audio streaming
+- Transcription from audio data. E.g.: Every 30 seconds, get audio from last minute, transcribe it, and combine to previous previous transcriptions with diff(?) algorithm to make a full-time transcription.
+- Audio analysis. E.g.: Detect live note (for whistling/singing practice), clean audio, etc.
 
 ## Acknowledgments
 
