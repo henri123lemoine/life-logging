@@ -4,7 +4,7 @@ use std::io::Cursor;
 use hound::{WavSpec, WavWriter};
 use plotters::prelude::*;
 use plotters::backend::RGBPixel;
-use tracing::{debug, info, warn};
+use tracing::info;
 
 pub struct CircularAudioBuffer {
     buffer: Arc<Mutex<Vec<f32>>>,
