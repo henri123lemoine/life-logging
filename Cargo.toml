@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.86"
 axum = "0.7.5"
 axum-server = "0.7.1"
 config = "0.14.0"
@@ -12,7 +11,6 @@ cpal = "0.15.3"
 hound = "3.5.1"
 plotters = "0.3.7"
 png = "0.17.13"
-rb = "0.4.1"
 serde = { version = "1.0.210", features = ["derive"] }
 serde_json = "1.0.128"
 tokio = { version = "1.40.0", features = ["rt", "rt-multi-thread", "macros"] }
