@@ -98,6 +98,7 @@ pub struct Mp3Encoder;
 impl AudioEncoder for Mp3Encoder {
     fn encode(&self, data: &[f32], sample_rate: u32) -> Vec<u8> {
         // MP3 encoding logic here
+        vec![]
     }
 }
 // let mp3_encoder = Mp3Encoder;
