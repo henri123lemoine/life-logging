@@ -53,7 +53,6 @@ Current configuration is set in `src/main.rs`:
 
 ## Future Improvements
 
-- External configuration file support
 - Additional audio format support (MP3, OGG)
 - Enhanced visualizations and customization options
 - Metrics and monitoring
