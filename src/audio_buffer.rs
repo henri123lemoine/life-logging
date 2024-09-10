@@ -4,6 +4,7 @@ use std::io::Cursor;
 use hound::{WavSpec, WavWriter};
 use plotters::prelude::*;
 use plotters::backend::RGBPixel;
+use tracing::{debug, info, warn};
 
 pub struct CircularAudioBuffer {
     buffer: Arc<Mutex<Vec<f32>>>,
@@ -14,6 +15,7 @@ pub struct CircularAudioBuffer {
 
 impl CircularAudioBuffer {
     pub fn new(capacity: usize, sample_rate: u32) -> Self {
+        info!("Creating new CircularAudioBuffer with capacity {} and sample rate {}", capacity, sample_rate);
         CircularAudioBuffer {
             buffer: Arc::new(Mutex::new(vec![0.0; capacity])),
             write_position: Arc::new(AtomicUsize::new(0)),
@@ -43,7 +45,6 @@ impl CircularAudioBuffer {
         let mut audio_data = Vec::with_capacity(self.capacity);
         audio_data.extend_from_slice(&buffer[write_pos..]);
         audio_data.extend_from_slice(&buffer[..write_pos]);
-
         audio_data
     }
 
@@ -57,11 +58,13 @@ impl CircularAudioBuffer {
 
     pub fn visualize(&self, width: u32, height: u32) -> Vec<u8> {
         let audio_data = self.read();
+        info!("Generating waveform visualization with dimensions {}x{}", width, height);
         AudioVisualizer::create_waveform(&audio_data, width, height)
     }
 
     pub fn encode<T: AudioEncoder>(&self, encoder: T) -> Vec<u8> {
         let audio_data = self.read();
+        info!("Encoding {} samples of audio data", audio_data.len());
         encoder.encode(&audio_data, self.sample_rate)
     }
 }
@@ -89,7 +92,9 @@ impl AudioEncoder for WavEncoder {
             }
             writer.finalize().unwrap();
         }
-        wav_buffer.into_inner()
+        let encoded_data = wav_buffer.into_inner();
+        info!("Encoded {} samples into {} bytes of WAV data", data.len(), encoded_data.len());
+        encoded_data
     }
 }
 
@@ -118,7 +123,6 @@ impl AudioVisualizer {
             root.fill(&WHITE).unwrap();
 
             let mut chart = ChartBuilder::on(&root)
-                // .set_all_visible_axes()
                 .build_cartesian_2d(0f32..data.len() as f32, -1f32..1f32)
                 .unwrap();
 
@@ -149,6 +153,7 @@ impl AudioVisualizer {
             writer.write_image_data(&buffer).unwrap();
         }
 
+        info!("Generated waveform visualization of {} bytes", png_data.len());
         png_data
     }
 }

@@ -19,15 +19,10 @@ impl Settings {
         let env = std::env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
 
         let s = Config::builder()
-            // Start off by merging in the "default" configuration file
             .add_source(File::new("config/default", FileFormat::Toml))
-            // Add in the current environment file
-            // Default to 'development' env
-            // Note that this file is _optional_
             .add_source(File::new(&format!("config/{}", env), FileFormat::Toml).required(false))
             .build()?;
 
-        // You can deserialize (and thus freeze) the entire configuration
         s.try_deserialize()
     }
 }

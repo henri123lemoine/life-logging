@@ -13,9 +13,11 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::{SupportedStreamConfig, SampleRate};
 use std::time::{Duration, Instant};
 use audio_buffer::{CircularAudioBuffer, WavEncoder};
 use config::Settings;
+use tracing::{info, warn, error, debug};
 
 struct AppState {
     audio_buffer: Arc<CircularAudioBuffer>,
@@ -27,7 +29,14 @@ struct AppState {
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Set up tracing
+    tracing_subscriber::fmt::init();
+
+    info!("Starting Life-Logging audio recording service");
+
     let settings = Arc::new(Settings::new()?);
+    debug!("Loaded configuration: {:?}", settings);
+
     let buffer_size = settings.sample_rate as usize * settings.buffer_duration as usize;
 
     let audio_buffer = Arc::new(CircularAudioBuffer::new(buffer_size, settings.sample_rate));
@@ -55,7 +64,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
 
     // Set up audio capture
-    setup_audio_capture(app_state.audio_sender.clone(), settings.sample_rate);
+    match setup_audio_capture(app_state.audio_sender.clone(), settings.sample_rate) {
+        Ok(_) => info!("Audio capture set up successfully"),
+        Err(e) => {
+            error!("Failed to set up audio capture: {}", e);
+            // TODO: handle this error more gracefully, e.g. by retrying with a different sample rate or exiting the program
+        }
+    }
 
     let app = Router::new()
         .route("/", get(|| async { "Audio Recording Server" }))
@@ -64,11 +79,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/visualize_audio", get(visualize_audio))
         .with_state(app_state);
 
+        info!("Listening on {}", settings.server.host);
+
     let addr = SocketAddr::new(
         settings.server.host.parse()?,
         settings.server.port
     );
-    println!("listening on {}", addr);
+    info!("Listening on {}", addr);
     axum_server::bind(addr)
         .serve(app.into_make_service())
         .await?;
@@ -78,40 +95,78 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn health_check(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     let uptime = state.start_time.elapsed().unwrap_or_default();
-    Json(json!({
+    let response = json!({
         "status": "ok",
         "uptime": format!("{}s", uptime.as_secs()),
         "message": "Audio Recording Server is running"
-    }))
+    });
+    debug!("Health check response: {:?}", response);
+    Json(response)
 }
 
-fn setup_audio_capture(audio_sender: mpsc::Sender<Vec<f32>>, sample_rate: u32) {
+fn setup_audio_capture(audio_sender: mpsc::Sender<Vec<f32>>, desired_sample_rate: u32) -> Result<(), Box<dyn std::error::Error>> {
     let host = cpal::default_host();
-    let device = host.default_input_device().expect("no input device available");
-    let config = cpal::StreamConfig {
-        channels: 1,
-        sample_rate: cpal::SampleRate(sample_rate),
-        buffer_size: cpal::BufferSize::Default,
-    };
+    let device = host.default_input_device().ok_or("No input device available")?;
 
-    println!("Audio input config: {:?}", config);
+    info!("Available input devices:");
+    for (idx, device) in host.input_devices()?.enumerate() {
+        info!("  {}. {}", idx + 1, device.name()?);
+    }
 
-    let stream: cpal::Stream = device.build_input_stream(
-        &config.into(),
+    let mut supported_configs_range = device.supported_input_configs()?;
+
+    info!("Supported configurations for the default device:");
+    let mut best_config: Option<SupportedStreamConfig> = None;
+    let mut closest_rate_diff = u32::MAX;
+
+    while let Some(supported_config) = supported_configs_range.next() {
+        info!("  {:?}", supported_config);
+        
+        let range = supported_config.min_sample_rate().0..=supported_config.max_sample_rate().0;
+        if range.contains(&desired_sample_rate) {
+            best_config = Some(supported_config.with_sample_rate(SampleRate(desired_sample_rate)));
+            break;
+        } else {
+            let start = *range.start();
+            let end = *range.end();
+            let diff = if desired_sample_rate < start {
+                start - desired_sample_rate
+            } else {
+                desired_sample_rate - end
+            };
+            if diff < closest_rate_diff {
+                closest_rate_diff = diff;
+                best_config = Some(supported_config.with_sample_rate(SampleRate(if desired_sample_rate < start { start } else { end })));
+            }
+        }
+    }
+
+    let supported_config = best_config.ok_or("No supported config found")?;
+    info!("Using audio config: {:?}", supported_config);
+
+    let config: cpal::StreamConfig = supported_config.into();
+
+    let stream = device.build_input_stream(
+        &config,
         move |data: &[f32], _: &cpal::InputCallbackInfo| {
             if !data.iter().any(|&sample| sample != 0.0) {
-                println!("Detected no audio input");
+                debug!("Detected no audio input");
             }
-            let _ = audio_sender.try_send(data.to_vec());
+            if let Err(e) = audio_sender.try_send(data.to_vec()) {
+                warn!("Failed to send audio data: {}", e);
+            }
         },
-        |err| eprintln!("An error occurred on stream: {}", err),
+        |err| error!("An error occurred on stream: {}", err),
         Some(Duration::from_secs(2))
-    ).unwrap();
+    )?;
 
-    stream.play().unwrap();
-    println!("Audio stream started");
+    stream.play()?;
+    info!("Audio stream started with sample rate: {}", config.sample_rate.0);
 
+    // Keep the stream alive
     std::mem::forget(stream);
+
+    Ok(())
 }
 
 async fn audio_processing_task(
@@ -125,7 +180,7 @@ async fn audio_processing_task(
         // Rate-limited logging
         let mut last_time = last_log_time.lock().unwrap();
         if last_time.elapsed() >= Duration::from_secs(10) {
-            println!("Audio buffer status: wrote {} samples", data.len());
+            info!("Audio buffer status: wrote {} samples", data.len());
             *last_time = Instant::now();
         }
     }
@@ -135,7 +190,7 @@ async fn get_audio(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let wav_encoder = WavEncoder;
     let wav_data = state.audio_buffer.encode(wav_encoder);
 
-    println!("Encoded {} bytes of WAV audio data", wav_data.len());
+    info!("Encoded {} bytes of WAV audio data", wav_data.len());
 
     (
         StatusCode::OK,
@@ -148,11 +203,11 @@ async fn get_audio(State(state): State<Arc<AppState>>) -> impl IntoResponse {
 }
 
 async fn visualize_audio(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    let width = 800; // You can make this configurable if needed
+    let width = 800;
     let height = 400;
     let image_data = state.audio_buffer.visualize(width, height);
 
-    println!("Generated audio visualization image");
+    info!("Generated audio visualization image");
 
     (
         StatusCode::OK,
