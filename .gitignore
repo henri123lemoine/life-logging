@@ -22,3 +22,5 @@ Cargo.lock
 
 # Project-specific files
 audio.wav
+config/*.toml
+!config/default.toml

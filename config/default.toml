@@ -1,0 +1,6 @@
+sample_rate = 48000
+buffer_duration = 60
+
+[server]
+host = "127.0.0.1"
+port = 3000

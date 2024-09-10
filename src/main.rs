@@ -1,4 +1,5 @@
 mod audio_buffer;
+mod config;
 
 use axum::{
     routing::get,
@@ -14,34 +15,35 @@ use tokio::sync::mpsc;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::time::{Duration, Instant};
 use audio_buffer::{CircularAudioBuffer, WavEncoder};
-
-const SAMPLE_RATE: u32 = 48000; // 48 kHz
-const MAX_BUFFER_DURATION: usize = 60; // 60 seconds
-const BUFFER_SIZE: usize = SAMPLE_RATE as usize * MAX_BUFFER_DURATION;
-const ADDR: ([u8; 4], u16) = ([127, 0, 0, 1], 3000);
+use config::Settings;
 
 struct AppState {
     audio_buffer: Arc<CircularAudioBuffer>,
     audio_sender: mpsc::Sender<Vec<f32>>,
     start_time: std::time::SystemTime,
     last_log_time: Arc<Mutex<Instant>>,
+    settings: Arc<Settings>,
 }
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
-async fn main() {
-    let audio_buffer = Arc::new(CircularAudioBuffer::new(BUFFER_SIZE, SAMPLE_RATE));
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let settings = Arc::new(Settings::new()?);
+    let buffer_size = settings.sample_rate as usize * settings.buffer_duration as usize;
+
+    let audio_buffer = Arc::new(CircularAudioBuffer::new(buffer_size, settings.sample_rate));
     let (audio_sender, audio_receiver) = mpsc::channel(1024);
-    
+
     let app_state = Arc::new(AppState {
         audio_buffer: audio_buffer.clone(),
         audio_sender,
         start_time: std::time::SystemTime::now(),
         last_log_time: Arc::new(Mutex::new(Instant::now())),
+        settings: settings.clone(),
     });
 
     // Initialize buffer with silence
     {
-        let silence = vec![0.0; BUFFER_SIZE];
+        let silence = vec![0.0; buffer_size];
         app_state.audio_buffer.write(&silence);
     }
 
@@ -53,7 +55,7 @@ async fn main() {
     ));
 
     // Set up audio capture
-    setup_audio_capture(app_state.audio_sender.clone());
+    setup_audio_capture(app_state.audio_sender.clone(), settings.sample_rate);
 
     let app = Router::new()
         .route("/", get(|| async { "Audio Recording Server" }))
@@ -62,12 +64,16 @@ async fn main() {
         .route("/visualize_audio", get(visualize_audio))
         .with_state(app_state);
 
-    let addr = SocketAddr::from(ADDR);
+    let addr = SocketAddr::new(
+        settings.server.host.parse()?,
+        settings.server.port
+    );
     println!("listening on {}", addr);
     axum_server::bind(addr)
         .serve(app.into_make_service())
-        .await
-        .unwrap();
+        .await?;
+
+    Ok(())
 }
 
 async fn health_check(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
@@ -79,10 +85,14 @@ async fn health_check(State(state): State<Arc<AppState>>) -> Json<serde_json::Va
     }))
 }
 
-fn setup_audio_capture(audio_sender: mpsc::Sender<Vec<f32>>) {
+fn setup_audio_capture(audio_sender: mpsc::Sender<Vec<f32>>, sample_rate: u32) {
     let host = cpal::default_host();
     let device = host.default_input_device().expect("no input device available");
-    let config = device.default_input_config().unwrap();
+    let config = cpal::StreamConfig {
+        channels: 1,
+        sample_rate: cpal::SampleRate(sample_rate),
+        buffer_size: cpal::BufferSize::Default,
+    };
 
     println!("Audio input config: {:?}", config);
 
