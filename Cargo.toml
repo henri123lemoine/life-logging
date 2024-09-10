@@ -3,6 +3,14 @@ name = "life-logging"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "main"
+path = "src/main.rs"
+
+[[bin]]
+name = "log_test"
+path = "src/bin/log_test.rs"
+
 [dependencies]
 anyhow = "1.0.86"
 axum = "0.7.5"
