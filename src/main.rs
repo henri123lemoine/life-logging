@@ -73,8 +73,19 @@ async fn audio_processing_task(
     audio_buffer: Arc<CircularAudioBuffer>,
     audio_receiver: &mut broadcast::Receiver<Vec<f32>>,
 ) {
-    while let Ok(data) = audio_receiver.recv().await {
-        audio_buffer.write(&data);
+    let mut interval = tokio::time::interval(Duration::from_secs(5));
+    loop {
+        tokio::select! {
+            _ = interval.tick() => {
+                // Process audio data or do whatever every 5 seconds (general template)
+                // This could involve writing to a file or other persistent storage
+            }
+            result = audio_receiver.recv() => {
+                if let Ok(data) = result {
+                    audio_buffer.write(&data);
+                }
+            }
+        }
     }
 }
 
