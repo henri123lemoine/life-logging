@@ -2,7 +2,8 @@ use serde::Deserialize;
 use config::{Config as ConfigSource, ConfigError, File, FileFormat};
 use std::sync::Arc;
 use cpal::traits::{DeviceTrait, HostTrait};
-use cpal::{StreamConfig, Device};
+use cpal::{StreamConfig, Device, Host};
+use tracing::{info, warn};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -49,20 +50,51 @@ impl Config {
 
     pub fn get_audio_config(&self) -> Result<(Device, StreamConfig), Box<dyn std::error::Error>> {
         let host = cpal::default_host();
-        let device = host.default_input_device().ok_or("No input device available")?;
-        let config = self.find_supported_config(&device)?;
+        self.find_working_device_and_config(&host)
+    }
 
-        Ok((device, config))
+    fn find_working_device_and_config(&self, host: &Host) -> Result<(Device, StreamConfig), Box<dyn std::error::Error>> {
+        let devices = host.input_devices()?;
+        
+        for device in devices {
+            if let Ok(name) = device.name() {
+                info!("Checking device: {}", name);
+            }
+            
+            match self.find_supported_config(&device) {
+                Ok(config) => {
+                    info!("Found working config for device {:?}: {:?}", device.name(), config);
+                    return Ok((device, config));
+                }
+                Err(e) => {
+                    warn!("Config not supported for device {:?}: {}", device.name(), e);
+                    continue;
+                }
+            }
+        }
+        
+        Err("No working audio input device and configuration found".into())
     }
 
     fn find_supported_config(&self, device: &Device) -> Result<StreamConfig, Box<dyn std::error::Error>> {
-        let mut supported_configs_range = device.supported_input_configs()?;
-        let supported_config = supported_configs_range
-            .find(|range| range.min_sample_rate().0 <= self.sample_rate && self.sample_rate <= range.max_sample_rate().0)
-            .ok_or("No supported config found")?
-            .with_sample_rate(cpal::SampleRate(self.sample_rate));
-
-        Ok(supported_config.into())
+        let supported_configs_range = device.supported_input_configs()?;
+        
+        info!("Desired sample rate: {}", self.sample_rate);
+        
+        for range in supported_configs_range {
+            info!("Checking range: {} - {}", range.min_sample_rate().0, range.max_sample_rate().0);
+            if range.min_sample_rate().0 <= self.sample_rate && self.sample_rate <= range.max_sample_rate().0 {
+                let config = range.with_sample_rate(cpal::SampleRate(self.sample_rate));
+                info!("Found exact match for sample rate: {}", self.sample_rate);
+                return Ok(config.config());
+            }
+        }
+        
+        warn!("No exact match found for sample rate: {}", self.sample_rate);
+        // Fall back to the default config
+        let default_config = device.default_input_config()?;
+        info!("Using default config with sample rate: {}", default_config.sample_rate().0);
+        Ok(default_config.config())
     }
 }
 
