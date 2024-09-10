@@ -3,6 +3,8 @@ use rb::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::io::Cursor;
 use hound::{WavSpec, WavWriter};
+use plotters::prelude::*;
+use plotters::backend::RGBPixel;
 
 pub struct CircularAudioBuffer {
     buffer: Arc<Mutex<SpscRb<f32>>>,
@@ -60,6 +62,11 @@ impl CircularAudioBuffer {
         self.sample_rate
     }
 
+    pub fn visualize(&self, width: u32, height: u32) -> Vec<u8> {
+        let audio_data = self.read();
+        AudioVisualizer::create_waveform(&audio_data, width, height)
+    }
+
     pub fn encode<T: AudioEncoder>(&self, encoder: T) -> Vec<u8> {
         let audio_data = self.read();
         encoder.encode(&audio_data, self.sample_rate)
@@ -93,13 +100,62 @@ impl AudioEncoder for WavEncoder {
     }
 }
 
-pub struct Mp3Encoder;
+// pub struct Mp3Encoder;
 
-impl AudioEncoder for Mp3Encoder {
-    fn encode(&self, data: &[f32], sample_rate: u32) -> Vec<u8> {
-        // MP3 encoding logic here
-        vec![]
+// impl AudioEncoder for Mp3Encoder {
+//     fn encode(&self, data: &[f32], sample_rate: u32) -> Vec<u8> {
+//         // MP3 encoding logic here
+//         vec![]
+//     }
+// }
+// // let mp3_encoder = Mp3Encoder;
+// // let mp3_data = state.audio_buffer.encode(mp3_encoder);
+
+pub struct AudioVisualizer;
+
+impl AudioVisualizer {
+    pub fn create_waveform(data: &[f32], width: u32, height: u32) -> Vec<u8> {
+        let mut buffer = vec![0u8; (width * height * 3) as usize];
+        {
+            let root = BitMapBackend::<RGBPixel>::with_buffer_and_format(
+                &mut buffer,
+                (width, height)
+            ).unwrap().into_drawing_area();
+            
+            root.fill(&WHITE).unwrap();
+
+            let mut chart = ChartBuilder::on(&root)
+                // .set_all_visible_axes()
+                .build_cartesian_2d(0f32..data.len() as f32, -1f32..1f32)
+                .unwrap();
+
+            chart
+                .configure_mesh()
+                .disable_x_mesh()
+                .disable_y_mesh()
+                .draw()
+                .unwrap();
+
+            chart
+                .draw_series(LineSeries::new(
+                    data.iter().enumerate().map(|(i, &v)| (i as f32, v)),
+                    &RED,
+                ))
+                .unwrap();
+
+            root.present().unwrap();
+        }
+
+        // Convert RGB buffer to PNG
+        let mut png_data = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut png_data, width, height);
+            encoder.set_color(png::ColorType::Rgb);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().unwrap();
+            writer.write_image_data(&buffer).unwrap();
+        }
+
+        png_data
     }
 }
-// let mp3_encoder = Mp3Encoder;
-// let mp3_data = state.audio_buffer.encode(mp3_encoder);

@@ -59,6 +59,7 @@ async fn main() {
         .route("/", get(|| async { "Audio Recording Server" }))
         .route("/health", get(health_check))
         .route("/get_audio", get(get_audio))
+        .route("/visualize_audio", get(visualize_audio))
         .with_state(app_state);
 
     let addr = SocketAddr::from(ADDR);
@@ -133,5 +134,22 @@ async fn get_audio(State(state): State<Arc<AppState>>) -> impl IntoResponse {
             (header::CONTENT_DISPOSITION, "attachment; filename=\"audio.wav\""),
         ],
         wav_data,
+    )
+}
+
+async fn visualize_audio(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let width = 800; // You can make this configurable if needed
+    let height = 400;
+    let image_data = state.audio_buffer.visualize(width, height);
+
+    println!("Generated audio visualization image");
+
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "image/png"),
+            (header::CONTENT_DISPOSITION, "inline"),
+        ],
+        image_data,
     )
 }
