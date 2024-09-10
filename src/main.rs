@@ -1,5 +1,6 @@
 mod audio_buffer;
 mod config;
+use crate::config::{load_settings, get_audio_config};
 
 use axum::{
     routing::get,
@@ -11,7 +12,7 @@ use axum::{
 use serde_json::json;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::traits::{DeviceTrait, StreamTrait};
 use std::time::Duration;
 use audio_buffer::{CircularAudioBuffer, WavEncoder};
 use config::Settings;
@@ -27,24 +28,18 @@ struct AppState {
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    setup_tracing();
+    tracing_subscriber::fmt::init();
+    info!("Starting Life-Logging audio recording service");
+
     let settings = load_settings()?;
     let app_state = setup_app_state(&settings)?;
     setup_audio_processing(&app_state);
-    setup_audio_capture(&app_state)?;
+    
+    let (device, config) = get_audio_config(&settings)?;
+    start_audio_stream(device, config, app_state.audio_sender.clone())?;
+
     run_server(&app_state).await?;
     Ok(())
-}
-
-fn setup_tracing() {
-    tracing_subscriber::fmt::init();
-    info!("Starting Life-Logging audio recording service");
-}
-
-fn load_settings() -> Result<Arc<Settings>, Box<dyn std::error::Error>> {
-    let settings = Arc::new(Settings::new()?);
-    debug!("Loaded configuration: {:?}", settings);
-    Ok(settings)
 }
 
 fn setup_app_state(settings: &Arc<Settings>) -> Result<Arc<AppState>, Box<dyn std::error::Error>> {
@@ -73,29 +68,6 @@ fn setup_audio_processing(app_state: &Arc<AppState>) {
     tokio::spawn(async move {
         audio_processing_task(audio_buffer, &mut audio_receiver).await;
     });
-}
-
-fn setup_audio_capture(app_state: &Arc<AppState>) -> Result<(), Box<dyn std::error::Error>> {
-    let audio_sender = app_state.audio_sender.clone();
-    let sample_rate = app_state.settings.sample_rate;
-
-    let host = cpal::default_host();
-    let device = host.default_input_device().ok_or("No input device available")?;
-    let config = find_supported_config(&device, sample_rate)?;
-
-    start_audio_stream(device, config, audio_sender)?;
-
-    Ok(())
-}
-
-fn find_supported_config(device: &cpal::Device, desired_sample_rate: u32) -> Result<cpal::StreamConfig, Box<dyn std::error::Error>> {
-    let mut supported_configs_range = device.supported_input_configs()?;
-    let supported_config = supported_configs_range
-        .find(|range| range.min_sample_rate().0 <= desired_sample_rate && desired_sample_rate <= range.max_sample_rate().0)
-        .ok_or("No supported config found")?
-        .with_sample_rate(cpal::SampleRate(desired_sample_rate));
-
-    Ok(supported_config.into())
 }
 
 async fn audio_processing_task(
