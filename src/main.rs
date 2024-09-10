@@ -10,11 +10,9 @@ use axum::{
 };
 use serde_json::json;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc;
+use std::sync::Arc;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{SupportedStreamConfig, SampleRate};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use audio_buffer::{CircularAudioBuffer, WavEncoder};
 use config::Settings;
 use tracing::{info, warn, error, debug};
@@ -24,7 +22,6 @@ struct AppState {
     audio_buffer: Arc<CircularAudioBuffer>,
     audio_sender: broadcast::Sender<Vec<f32>>,
     start_time: std::time::SystemTime,
-    last_log_time: Arc<Mutex<Instant>>,
     settings: Arc<Settings>,
 }
 
@@ -59,7 +56,6 @@ fn setup_app_state(settings: &Arc<Settings>) -> Result<Arc<AppState>, Box<dyn st
         audio_buffer: audio_buffer.clone(),
         audio_sender,
         start_time: std::time::SystemTime::now(),
-        last_log_time: Arc::new(Mutex::new(Instant::now())),
         settings: settings.clone(),
     });
 
@@ -73,10 +69,9 @@ fn setup_app_state(settings: &Arc<Settings>) -> Result<Arc<AppState>, Box<dyn st
 fn setup_audio_processing(app_state: &Arc<AppState>) {
     let audio_buffer = app_state.audio_buffer.clone();
     let mut audio_receiver = app_state.audio_sender.subscribe();
-    let last_log_time = app_state.last_log_time.clone();
 
     tokio::spawn(async move {
-        audio_processing_task(audio_buffer, &mut audio_receiver, last_log_time).await;
+        audio_processing_task(audio_buffer, &mut audio_receiver).await;
     });
 }
 
@@ -106,17 +101,9 @@ fn find_supported_config(device: &cpal::Device, desired_sample_rate: u32) -> Res
 async fn audio_processing_task(
     audio_buffer: Arc<CircularAudioBuffer>,
     audio_receiver: &mut broadcast::Receiver<Vec<f32>>,
-    last_log_time: Arc<Mutex<Instant>>
 ) {
     while let Ok(data) = audio_receiver.recv().await {
         audio_buffer.write(&data);
-        
-        // Rate-limited logging
-        let mut last_time = last_log_time.lock().unwrap();
-        if last_time.elapsed() >= Duration::from_secs(10) {
-            info!("Audio buffer status: wrote {} samples", data.len());
-            *last_time = Instant::now();
-        }
     }
 }
 
