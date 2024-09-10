@@ -11,8 +11,8 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use rb::*;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use std::time::Duration;
-use serde::Deserialize;
+use std::time::{Duration, Instant};
+// use serde::Deserialize;
 use hound::{WavWriter, WavSpec};
 use std::io::Cursor;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -27,6 +27,7 @@ struct AppState {
     audio_sender: mpsc::Sender<Vec<f32>>,
     write_position: Arc<AtomicUsize>,
     start_time: std::time::SystemTime,
+    last_log_time: Arc<Mutex<Instant>>,
 }
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
@@ -39,13 +40,23 @@ async fn main() {
         audio_sender,
         write_position: Arc::new(AtomicUsize::new(0)),
         start_time: std::time::SystemTime::now(),
+        last_log_time: Arc::new(Mutex::new(Instant::now())),
     });
+
+    // Initialize buffer with silence
+    {
+        let mut buffer = app_state.ring_buffer.lock().unwrap();
+        let producer = buffer.producer();
+        let silence = vec![0.0; BUFFER_SIZE];
+        let _ = producer.write(&silence);
+    }
 
     // Start audio processing task
     tokio::spawn(audio_processing_task(
         ring_buffer.clone(),
         audio_receiver,
-        app_state.write_position.clone()
+        app_state.write_position.clone(),
+        app_state.last_log_time.clone()
     ));
 
     // Set up audio capture
@@ -102,10 +113,11 @@ fn setup_audio_capture(audio_sender: mpsc::Sender<Vec<f32>>) {
 async fn audio_processing_task(
     ring_buffer: Arc<Mutex<SpscRb<f32>>>,
     mut audio_receiver: mpsc::Receiver<Vec<f32>>,
-    write_position: Arc<AtomicUsize>
+    write_position: Arc<AtomicUsize>,
+    last_log_time: Arc<Mutex<Instant>>
 ) {
     while let Some(data) = audio_receiver.recv().await {
-        let buffer = ring_buffer.lock().unwrap();
+        let mut buffer = ring_buffer.lock().unwrap();
         let producer = buffer.producer();
         let buffer_capacity = buffer.capacity();
         let current_position = write_position.load(Ordering::Relaxed);
@@ -122,70 +134,36 @@ async fn audio_processing_task(
         let new_position = (current_position + data_len) % buffer_capacity;
         write_position.store(new_position, Ordering::Relaxed);
         
-        println!("Wrote {} samples to ring buffer, new write position: {}", data_len, new_position);
+        // Rate-limited logging
+        let mut last_time = last_log_time.lock().unwrap();
+        if last_time.elapsed() >= Duration::from_secs(10) {
+            println!("Audio buffer status: wrote {} samples, buffer position: {}/{}", 
+                     data_len, new_position, buffer_capacity);
+            *last_time = Instant::now();
+        }
     }
 }
 
-#[derive(Deserialize)]
-struct AudioQuery {
-    seconds: Option<usize>,
-}
-
-async fn get_audio(
-    State(state): State<Arc<AppState>>,
-    Query(params): Query<AudioQuery>,
-) -> impl IntoResponse {
-    let seconds = params.seconds.unwrap_or(MAX_BUFFER_DURATION);
-    let samples_to_read = std::cmp::min(seconds * SAMPLE_RATE as usize, BUFFER_SIZE);
-
+async fn get_audio(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let buffer = state.ring_buffer.lock().unwrap();
     let consumer = buffer.consumer();
     let write_pos = state.write_position.load(Ordering::Relaxed);
     let buffer_size = buffer.capacity();
 
-    println!("Ring buffer capacity: {}", buffer_size);
-    println!("Ring buffer write position: {}", write_pos);
-    println!("Requested samples to read: {}", samples_to_read);
+    let mut audio_data = vec![0.0; buffer_size];
 
-    let mut audio_data = vec![0.0; samples_to_read];
-    let mut total_read = 0;
+    // Read the most recent data first (from write_pos to end)
+    let read_recent = consumer.read(&mut audio_data[..buffer_size - write_pos]).unwrap_or(0);
 
-    // Read from current position to end
-    let read_to_end = consumer.read(&mut audio_data[..std::cmp::min(buffer_size - write_pos, samples_to_read)]);
-    match read_to_end {
-        Ok(read) => {
-            total_read += read;
-            println!("Read {} samples from current position to end", read);
-        },
-        Err(e) => eprintln!("Error reading from ring buffer (current to end): {:?}", e),
-    }
+    // Then read the older data (from start to write_pos)
+    let read_older = consumer.read(&mut audio_data[buffer_size - write_pos..]).unwrap_or(0);
 
-    // If we need more data, read from start to current position
-    if total_read < samples_to_read {
-        let read_from_start = consumer.read(&mut audio_data[total_read..]);
-        match read_from_start {
-            Ok(read) => {
-                total_read += read;
-                println!("Read {} samples from start to current position", read);
-            },
-            Err(e) => eprintln!("Error reading from ring buffer (start to current): {:?}", e),
-        }
-    }
+    let total_read = read_recent + read_older;
 
-    println!("Total read {} samples from ring buffer", total_read);
+    // Rearrange the buffer so that the oldest data comes first
+    audio_data.rotate_left(buffer_size - write_pos);
 
-    if audio_data.iter().any(|&sample| sample != 0.0) {
-        println!("Detected non-zero audio in buffer");
-    } else {
-        println!("Warning: All zero samples in buffer");
-    }
-
-    // If we read fewer samples than requested, pad with silence
-    if total_read < samples_to_read {
-        audio_data.truncate(total_read);
-        audio_data.resize(samples_to_read, 0.0);
-        println!("Padded with {} samples of silence", samples_to_read - total_read);
-    }
+    println!("Read {} samples from ring buffer", total_read);
 
     // Create a WAV file in memory
     let spec = WavSpec {
