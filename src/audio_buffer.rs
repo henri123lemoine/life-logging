@@ -5,6 +5,7 @@ use plotters::backend::RGBPixel;
 use tracing::info;
 use std::process::Command;
 use std::io::Write;
+use tempfile::NamedTempFile;
 
 pub struct CircularAudioBuffer {
     buffer: Arc<Mutex<Vec<f32>>>,
@@ -116,16 +117,35 @@ impl AudioEncoder for WavEncoder {
     }
 }
 
-// pub struct Mp3Encoder;
+pub struct FlacEncoder;
 
-// impl AudioEncoder for Mp3Encoder {
-//     fn encode(&self, data: &[f32], sample_rate: u32) -> Vec<u8> {
-//         // MP3 encoding logic here
-//         vec![]
-//     }
-// }
-// // let mp3_encoder = Mp3Encoder;
-// // let mp3_data = state.audio_buffer.encode(mp3_encoder);
+impl AudioEncoder for FlacEncoder {
+    fn encode(&self, data: &[f32], sample_rate: u32) -> Vec<u8> {
+        // Create a temporary WAV file
+        let mut temp_wav = NamedTempFile::new().unwrap();
+        let wav_encoder = WavEncoder;
+        let wav_data = wav_encoder.encode(data, sample_rate);
+        temp_wav.write_all(&wav_data).unwrap();
+        
+        // Use external FLAC encoder
+        let output = Command::new("flac")
+            .arg("--silent")
+            .arg("--force")
+            .arg("--stdout")
+            .arg("--channels=1")
+            .arg(format!("--sample-rate={}", sample_rate))
+            .arg(temp_wav.path())
+            .output()
+            .expect("Failed to execute FLAC encoder");
+
+        if !output.status.success() {
+            panic!("FLAC encoding failed: {}", String::from_utf8_lossy(&output.stderr));
+        }
+
+        info!("Encoded {} samples into {} bytes of FLAC data", data.len(), output.stdout.len());
+        output.stdout
+    }
+}
 
 pub struct AudioVisualizer;
 
