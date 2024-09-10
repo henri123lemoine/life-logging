@@ -1,6 +1,6 @@
 mod audio_buffer;
 mod config;
-use crate::config::{load_settings, get_audio_config};
+use config::{Config, load_config};
 
 use axum::{
     routing::get,
@@ -15,7 +15,6 @@ use std::sync::Arc;
 use cpal::traits::{DeviceTrait, StreamTrait};
 use std::time::Duration;
 use audio_buffer::{CircularAudioBuffer, WavEncoder};
-use config::Settings;
 use tracing::{info, warn, error, debug};
 use tokio::sync::broadcast;
 
@@ -23,7 +22,7 @@ struct AppState {
     audio_buffer: Arc<CircularAudioBuffer>,
     audio_sender: broadcast::Sender<Vec<f32>>,
     start_time: std::time::SystemTime,
-    settings: Arc<Settings>,
+    config: Arc<Config>,
 }
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
@@ -31,27 +30,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
     info!("Starting Life-Logging audio recording service");
 
-    let settings = load_settings()?;
-    let app_state = setup_app_state(&settings)?;
+    let config = load_config()?;
+    let app_state = setup_app_state(&config)?;
     setup_audio_processing(&app_state);
     
-    let (device, config) = get_audio_config(&settings)?;
-    start_audio_stream(device, config, app_state.audio_sender.clone())?;
+    let (device, stream_config) = config.get_audio_config()?;
+    start_audio_stream(device, stream_config, app_state.audio_sender.clone())?;
 
     run_server(&app_state).await?;
     Ok(())
 }
 
-fn setup_app_state(settings: &Arc<Settings>) -> Result<Arc<AppState>, Box<dyn std::error::Error>> {
-    let buffer_size = settings.sample_rate as usize * settings.buffer_duration as usize;
-    let audio_buffer = Arc::new(CircularAudioBuffer::new(buffer_size, settings.sample_rate));
+fn setup_app_state(config: &Arc<Config>) -> Result<Arc<AppState>, Box<dyn std::error::Error>> {
+    let buffer_size = config.sample_rate as usize * config.buffer_duration as usize;
+    let audio_buffer = Arc::new(CircularAudioBuffer::new(buffer_size, config.sample_rate));
     let (audio_sender, _) = broadcast::channel(1024);
 
     let app_state = Arc::new(AppState {
         audio_buffer: audio_buffer.clone(),
         audio_sender,
         start_time: std::time::SystemTime::now(),
-        settings: settings.clone(),
+        config: config.clone(),
     });
 
     // Initialize buffer with silence
@@ -112,8 +111,8 @@ async fn run_server(app_state: &Arc<AppState>) -> Result<(), Box<dyn std::error:
         .with_state(app_state.clone());
 
     let addr = SocketAddr::new(
-        app_state.settings.server.host.parse()?,
-        app_state.settings.server.port
+        app_state.config.server.host.parse()?,
+        app_state.config.server.port
     );
     info!("Listening on {}", addr);
     axum_server::bind(addr)

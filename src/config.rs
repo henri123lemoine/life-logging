@@ -1,11 +1,11 @@
 use serde::Deserialize;
-use config::{Config, ConfigError, File, FileFormat};
+use config::{Config as ConfigSource, ConfigError, File, FileFormat};
 use std::sync::Arc;
 use cpal::traits::{DeviceTrait, HostTrait};
 use cpal::{StreamConfig, Device};
 
 #[derive(Debug, Deserialize)]
-pub struct Settings {
+pub struct Config {
     pub sample_rate: u32,
     pub buffer_duration: u64,
     pub server: ServerSettings,
@@ -17,33 +17,28 @@ pub struct ServerSettings {
     pub port: u16,
 }
 
-impl Settings {
+impl Config {
     pub fn new() -> Result<Arc<Self>, ConfigError> {
         let env = std::env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
 
-        let s = Config::builder()
+        let s = ConfigSource::builder()
             .add_source(File::new("config/default", FileFormat::Toml))
             .add_source(File::new(&format!("config/{}", env), FileFormat::Toml).required(false))
             .build()?;
 
-        let mut settings: Self = s.try_deserialize()?;
-        settings.validate_and_fix();
+        let mut config: Self = s.try_deserialize()?;
+        config.validate_and_fix();
 
-        Ok(Arc::new(settings))
+        Ok(Arc::new(config))
     }
 
     fn validate_and_fix(&mut self) {
-        // Validate and fix sample rate
         if self.sample_rate == 0 {
-            self.sample_rate = 48000; // Default to 48kHz if not set
+            self.sample_rate = 48000;
         }
-
-        // Validate and fix buffer duration
         if self.buffer_duration == 0 {
-            self.buffer_duration = 60; // Default to 60 seconds if not set
+            self.buffer_duration = 60;
         }
-
-        // Validate and fix server settings
         if self.server.host.is_empty() {
             self.server.host = "127.0.0.1".to_string();
         }
@@ -51,26 +46,26 @@ impl Settings {
             self.server.port = 3000;
         }
     }
+
+    pub fn get_audio_config(&self) -> Result<(Device, StreamConfig), Box<dyn std::error::Error>> {
+        let host = cpal::default_host();
+        let device = host.default_input_device().ok_or("No input device available")?;
+        let config = self.find_supported_config(&device)?;
+
+        Ok((device, config))
+    }
+
+    fn find_supported_config(&self, device: &Device) -> Result<StreamConfig, Box<dyn std::error::Error>> {
+        let mut supported_configs_range = device.supported_input_configs()?;
+        let supported_config = supported_configs_range
+            .find(|range| range.min_sample_rate().0 <= self.sample_rate && self.sample_rate <= range.max_sample_rate().0)
+            .ok_or("No supported config found")?
+            .with_sample_rate(cpal::SampleRate(self.sample_rate));
+
+        Ok(supported_config.into())
+    }
 }
 
-pub fn load_settings() -> Result<Arc<Settings>, ConfigError> {
-    Settings::new()
-}
-
-pub fn get_audio_config(settings: &Settings) -> Result<(Device, StreamConfig), Box<dyn std::error::Error>> {
-    let host = cpal::default_host();
-    let device = host.default_input_device().ok_or("No input device available")?;
-    let config = find_supported_config(&device, settings.sample_rate)?;
-
-    Ok((device, config))
-}
-
-fn find_supported_config(device: &Device, desired_sample_rate: u32) -> Result<StreamConfig, Box<dyn std::error::Error>> {
-    let mut supported_configs_range = device.supported_input_configs()?;
-    let supported_config = supported_configs_range
-        .find(|range| range.min_sample_rate().0 <= desired_sample_rate && desired_sample_rate <= range.max_sample_rate().0)
-        .ok_or("No supported config found")?
-        .with_sample_rate(cpal::SampleRate(desired_sample_rate));
-
-    Ok(supported_config.into())
+pub fn load_config() -> Result<Arc<Config>, ConfigError> {
+    Config::new()
 }
