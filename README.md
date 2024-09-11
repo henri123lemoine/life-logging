@@ -71,6 +71,7 @@ More detailedly,
 
 High priotity:
 
+- Select between available audio devices, no need for configuring sampling rate if this can be determined from device. (Handle multiple simulatneous devices?)
 - Websocket support for real-time audio streaming
 - Long-term storage and retrieval of audio data (e.g. save audio data to disk every minute, and persist in s3 once a day)
 - Transcription from audio data. E.g.: Every 30(?) seconds, get audio from last minute, transcribe it, and combine to previous previous transcriptions with diff(?) algorithm to make a full-time transcription. In fact, estimate the memory/RAM cost of having continuous live transcription, just to verify that this is feasible.
