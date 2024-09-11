@@ -65,8 +65,6 @@ impl AudioEncoder for FlacEncoder {
             .arg("--silent")
             .arg("--force")
             .arg("--stdout")
-            .arg("--channels=1")
-            .arg(format!("--sample-rate={}", sample_rate))
             .arg(temp_wav.path())
             .output()
             .expect("Failed to execute FLAC encoder");
