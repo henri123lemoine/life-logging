@@ -24,7 +24,7 @@ pub async fn get_audio(
     State(state): State<Arc<AppState>>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>
 ) -> impl IntoResponse {
-    let format = params.get("format").map(|s| s.to_lowercase()).unwrap_or_else(|| "pcm".to_string());
+    let format = params.get("format").map(|s| s.to_lowercase()).unwrap_or_else(|| "wav".to_string());
     
     let (data, content_type, content_disposition) = match format.as_str() {
         "pcm" => {
