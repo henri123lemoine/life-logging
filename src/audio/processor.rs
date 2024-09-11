@@ -1,11 +1,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::broadcast;
+use cpal::traits::{DeviceTrait, StreamTrait};
 use crate::app_state::AppState;
 use crate::audio::buffer::CircularAudioBuffer;
-use cpal::traits::{DeviceTrait, StreamTrait};
+use crate::error::Result;
 
-pub fn setup_audio_processing(app_state: &Arc<AppState>) {
+pub fn setup_audio_processing(app_state: &Arc<AppState>) -> Result<()> {
     let audio_buffer = app_state.audio_buffer.clone();
     let mut audio_receiver = app_state.audio_sender.subscribe();
 
@@ -13,9 +14,9 @@ pub fn setup_audio_processing(app_state: &Arc<AppState>) {
         audio_processing_task(audio_buffer, &mut audio_receiver).await;
     });
 
-    let (device, stream_config) = app_state.config.get_audio_config().expect("Failed to get audio config");
-    start_audio_stream(device, stream_config, app_state.audio_sender.clone())
-        .expect("Failed to start audio stream");
+    let (device, stream_config) = app_state.config.get_audio_config()?;
+    start_audio_stream(device, stream_config, app_state.audio_sender.clone())?;
+    Ok(())
 }
 
 async fn audio_processing_task(
@@ -38,7 +39,7 @@ async fn audio_processing_task(
     }
 }
 
-fn start_audio_stream(device: cpal::Device, config: cpal::StreamConfig, audio_sender: broadcast::Sender<Vec<f32>>) -> Result<(), Box<dyn std::error::Error>> {
+fn start_audio_stream(device: cpal::Device, config: cpal::StreamConfig, audio_sender: broadcast::Sender<Vec<f32>>) -> Result<()> {
     let stream = device.build_input_stream(
         &config,
         move |data: &[f32], _: &cpal::InputCallbackInfo| {

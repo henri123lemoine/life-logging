@@ -1,9 +1,10 @@
 use serde::Deserialize;
-use config::{Config as ConfigSource, ConfigError, File, FileFormat};
+use config::{Config as ConfigSource, File, FileFormat};
 use std::sync::Arc;
 use cpal::traits::{DeviceTrait, HostTrait};
 use cpal::{StreamConfig, Device, Host};
 use tracing::{info, warn};
+use crate::error::{LifeLoggingError, Result};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -19,7 +20,7 @@ pub struct ServerSettings {
 }
 
 impl Config {
-    pub fn new() -> Result<Arc<Self>, ConfigError> {
+    pub fn new() -> Result<Arc<Self>> {
         let env = std::env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
 
         let s = ConfigSource::builder()
@@ -48,12 +49,12 @@ impl Config {
         }
     }
 
-    pub fn get_audio_config(&self) -> Result<(Device, StreamConfig), Box<dyn std::error::Error>> {
+    pub fn get_audio_config(&self) -> Result<(Device, StreamConfig)> {
         let host = cpal::default_host();
         self.find_working_device_and_config(&host)
     }
 
-    fn find_working_device_and_config(&self, host: &Host) -> Result<(Device, StreamConfig), Box<dyn std::error::Error>> {
+    fn find_working_device_and_config(&self, host: &Host) -> Result<(Device, StreamConfig)> {
         let devices = host.input_devices()?;
         
         for device in devices {
@@ -73,10 +74,10 @@ impl Config {
             }
         }
         
-        Err("No working audio input device and configuration found".into())
+        Err(LifeLoggingError::AudioDeviceError("No working audio input device and configuration found".into()))
     }
 
-    fn find_supported_config(&self, device: &Device) -> Result<StreamConfig, Box<dyn std::error::Error>> {
+    fn find_supported_config(&self, device: &Device) -> Result<StreamConfig> {
         let supported_configs_range = device.supported_input_configs()?;
         
         info!("Desired sample rate: {}", self.sample_rate);
@@ -98,6 +99,6 @@ impl Config {
     }
 }
 
-pub fn load_config() -> Result<Arc<Config>, ConfigError> {
+pub fn load_config() -> Result<Arc<Config>> {
     Config::new()
 }

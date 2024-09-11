@@ -3,6 +3,7 @@ use std::time::SystemTime;
 use tokio::sync::broadcast;
 use crate::audio::buffer::CircularAudioBuffer;
 use crate::config::Config;
+use crate::error::Result;
 
 pub struct AppState {
     pub audio_buffer: Arc<CircularAudioBuffer>,
@@ -12,7 +13,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(config: &Arc<Config>) -> Result<Arc<Self>, Box<dyn std::error::Error>> {
+    pub fn new(config: &Arc<Config>) -> Result<Arc<Self>> {
         let buffer_size = config.sample_rate as usize * config.buffer_duration as usize;
         let audio_buffer = Arc::new(CircularAudioBuffer::new(buffer_size, config.sample_rate));
         let (audio_sender, _) = broadcast::channel(1024);
