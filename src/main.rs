@@ -1,4 +1,4 @@
-mod audio_buffer;
+mod audio;
 mod config;
 use config::{Config, load_config};
 
@@ -14,7 +14,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use cpal::traits::{DeviceTrait, StreamTrait};
 use std::time::Duration;
-use audio_buffer::{CircularAudioBuffer, WavEncoder};
+use audio::buffer::CircularAudioBuffer;
+use audio::encoder::WavEncoder;
 use tracing::{info, warn, error, debug};
 use tokio::sync::broadcast;
 

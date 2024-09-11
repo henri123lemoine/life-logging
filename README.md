@@ -60,6 +60,7 @@ Current configuration is set in `src/main.rs`:
 - Websocket support for real-time audio streaming
 - Transcription from audio data. E.g.: Every 30 seconds, get audio from last minute, transcribe it, and combine to previous previous transcriptions with diff(?) algorithm to make a full-time transcription.
 - Audio analysis. E.g.: Detect live note (for whistling/singing practice), clean audio, etc.
+- If someone says something insightful, simple keybind saves the audio+transcribed quote in a quotes folder.
 
 ## Acknowledgments
 
