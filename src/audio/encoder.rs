@@ -2,15 +2,16 @@ use tracing::info;
 use std::process::Command;
 use std::io::Write;
 use tempfile::NamedTempFile;
+use crate::error::{LifeLoggingError, Result};
 
 pub trait AudioEncoder {
-    fn encode(&self, data: &[f32], sample_rate: u32) -> Vec<u8>;
+    fn encode(&self, data: &[f32], sample_rate: u32) -> Result<Vec<u8>>;
 }
 
 pub struct WavEncoder;
 
 impl AudioEncoder for WavEncoder {
-    fn encode(&self, data: &[f32], sample_rate: u32) -> Vec<u8> {
+    fn encode(&self, data: &[f32], sample_rate: u32) -> Result<Vec<u8>> {
         let channels = 1u16;
         let bits_per_sample = 16u16;
         let byte_rate = sample_rate * u32::from(channels) * u32::from(bits_per_sample) / 8;
@@ -42,23 +43,24 @@ impl AudioEncoder for WavEncoder {
         // Audio data
         for &sample in data {
             let value = (sample.clamp(-1.0, 1.0) * 32767.0) as i16;
-            buffer.write_all(&value.to_le_bytes()).unwrap();
+            buffer.write_all(&value.to_le_bytes())
+                .map_err(|e| LifeLoggingError::EncodingError(format!("Failed to write WAV data: {}", e)))?;
         }
 
         info!("Encoded {} samples into {} bytes of WAV data", data.len(), buffer.len());
-        buffer
+        Ok(buffer)
     }
 }
 
 pub struct FlacEncoder;
 
 impl AudioEncoder for FlacEncoder {
-    fn encode(&self, data: &[f32], sample_rate: u32) -> Vec<u8> {
+    fn encode(&self, data: &[f32], sample_rate: u32) -> Result<Vec<u8>> {
         // Create a temporary WAV file
-        let mut temp_wav = NamedTempFile::new().unwrap();
+        let temp_wav = NamedTempFile::new().map_err(|e| LifeLoggingError::EncodingError(e.to_string()))?;
         let wav_encoder = WavEncoder;
-        let wav_data = wav_encoder.encode(data, sample_rate);
-        temp_wav.write_all(&wav_data).unwrap();
+        let wav_data = wav_encoder.encode(data, sample_rate)?;
+        temp_wav.as_file().write_all(&wav_data).map_err(|e| LifeLoggingError::EncodingError(e.to_string()))?;
         
         // Use external FLAC encoder
         let output = Command::new("flac")
@@ -67,13 +69,13 @@ impl AudioEncoder for FlacEncoder {
             .arg("--stdout")
             .arg(temp_wav.path())
             .output()
-            .expect("Failed to execute FLAC encoder");
+            .map_err(|e| LifeLoggingError::EncodingError(format!("Failed to execute FLAC encoder: {}", e)))?;
 
         if !output.status.success() {
-            panic!("FLAC encoding failed: {}", String::from_utf8_lossy(&output.stderr));
+            return Err(LifeLoggingError::EncodingError(format!("FLAC encoding failed: {}", String::from_utf8_lossy(&output.stderr))));
         }
 
         info!("Encoded {} samples into {} bytes of FLAC data", data.len(), output.stdout.len());
-        output.stdout
+        Ok(output.stdout)
     }
 }
