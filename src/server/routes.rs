@@ -3,14 +3,14 @@ use axum::{
     Router,
 };
 use std::sync::Arc;
+use super::handlers;
 use crate::app_state::AppState;
-use super::handlers::{health_check, get_audio, visualize_audio};
 
 pub fn create_router(app_state: Arc<AppState>) -> Router {
     Router::new()
         .route("/", get(|| async { "Audio Recording Server" }))
-        .route("/health", get(health_check))
-        .route("/get_audio", get(get_audio))
-        .route("/visualize_audio", get(visualize_audio))
+        .route("/health", get(handlers::health_check))
+        .route("/get_audio", get(handlers::get_audio))
+        .route("/visualize_audio", get(handlers::visualize_audio))
         .with_state(app_state)
 }

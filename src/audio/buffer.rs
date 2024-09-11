@@ -1,9 +1,9 @@
-use crate::audio::encoder::AudioEncoder;
-use crate::audio::visualizer::AudioVisualizer;
-
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tracing::info;
+use crate::audio::encoder::AudioEncoder;
+use crate::audio::visualizer::AudioVisualizer;
+use crate::error::Result;
 
 pub struct CircularAudioBuffer {
     buffer: Arc<Mutex<Vec<f32>>>,
@@ -63,7 +63,7 @@ impl CircularAudioBuffer {
         AudioVisualizer::create_waveform(&audio_data, width, height)
     }
 
-    pub fn encode<T: AudioEncoder>(&self, encoder: T) -> Vec<u8> {
+    pub fn encode<T: AudioEncoder>(&self, encoder: T) -> Result<Vec<u8>> {
         let audio_data = self.read();
         info!("Encoding {} samples of audio data", audio_data.len());
         encoder.encode(&audio_data, self.sample_rate)
