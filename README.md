@@ -69,16 +69,46 @@ Visualize recent audio data: Go to `http://127.0.0.1:61429/visualize_audio` in y
 
 ### Configuration
 
-Current configuration is set in `config/default.toml`:
+The application uses a flexible configuration system that supports both file-based configuration and environment variable overrides.
 
-- `sample_rate`: 48000 Hz
-- `buffer_duration`: 60 seconds
-- `[server] host`: "127.0.0.1"
-- `[server] port`: 61429
+### Configuration File
+
+The default configuration is set in config/default.toml. This file should contain your base configuration:
+
+```toml
+buffer_duration = 60
+
+[server]
+host = "127.0.0.1"
+port = 61429
+# Optional: Set a specific audio device
+# selected_device = "Default"
+```
 
 To override the default configuration, add a `.toml` file to the `config` directory with your preferred settings. The server will automatically load the configuration from this file.
 
-Set the `RUST_LOG` environment variable to `info` or `debug` to see more detailed logs.
+### Environment Variables
+
+You can override any file-configured value using environment variables. The format is:
+```bash
+LIFELOGGING__<SECTION>__<KEY>=<VALUE>
+```
+For example:
+
+- To change the buffer duration: LIFELOGGING__BUFFER_DURATION=120
+- To change the server port: LIFELOGGING__SERVER__PORT=8080
+
+### Logging
+
+Set the `RUST_LOG` environment variable to `info` or `debug` to see more detailed logs. Valid log levels are: error, warn, info, debug, trace.
+
+### Configuration Reloading
+
+The application supports hot-reloading of the configuration. You can trigger a configuration reload by sending a POST request to the /reload_config endpoint:
+```bash
+curl -X POST http://127.0.0.1:61429/reload_config
+```
+This will re-read the configuration file and apply any changes made to it or to the environment variables.
 
 ## Security Considerations
 
@@ -92,7 +122,7 @@ This project involves continuous audio recording, which has significant privacy 
 ## Future Improvements
 
 - [ ] Select between available audio devices
-  - [ ] When some audio device is disconnected, automatically switch to another available device
+  - [x] When some audio device is disconnected, automatically switch to another available device
   - [ ] Handle multiple simultaneous devices (?)
 - [ ] Websocket support for real-time audio streaming
 - [ ] Long-term audio persistence with s3
