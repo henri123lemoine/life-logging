@@ -1,7 +1,11 @@
 [package]
 name = "life-logging"
 version = "0.1.0"
+authors = ["Henri Lemoine <henri123lemoine@gmail.com>"]
 edition = "2021"
+description = "A Rust-based lifelogging audio recording server"
+license = "MIT"
+repository = "https://github.com/henri123lemoine/life-logging"
 
 [dependencies]
 axum = "0.7.5"
