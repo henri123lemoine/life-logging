@@ -1,77 +1,83 @@
+use config::{Config as ConfigSource, Environment, File};
 use serde::Deserialize;
-use config::{Config as ConfigSource, File, FileFormat};
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use cpal::traits::{DeviceTrait, HostTrait};
-use cpal::{StreamConfig, Device, Host};
+use cpal::StreamConfig;
 use tracing::{info, warn};
 use crate::error::{LifeLoggingError, Result};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Config {
-    pub sample_rate: u32,
     pub buffer_duration: u64,
     pub server: ServerSettings,
     pub selected_device: Option<String>,
+    pub audio_channel_buffer_size: Option<usize>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct ServerSettings {
     pub host: String,
     pub port: u16,
 }
 
-impl Config {
-    pub fn new() -> Result<Arc<Self>> {
-        let env = std::env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
+pub struct ConfigManager {
+    config: Arc<RwLock<Config>>,
+    config_source: ConfigSource,
+}
 
-        let s = ConfigSource::builder()
-            .add_source(File::new("config/default", FileFormat::Toml))
-            .add_source(File::new(&format!("config/{}", env), FileFormat::Toml).required(false))
+impl ConfigManager {
+    pub fn new() -> Result<Self> {
+        let env = std::env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
+        let config_source = ConfigSource::builder()
+            .add_source(File::with_name("config/default").required(false))
+            .add_source(File::with_name(&format!("config/{}", env)).required(false))
+            .add_source(Environment::with_prefix("LIFELOGGING").separator("__"))
             .build()?;
 
-        let mut config: Self = s.try_deserialize()?;
-        config.validate_and_fix();
-
-        Ok(Arc::new(config))
+        let config = config_source.clone().try_deserialize()?;
+        
+        Ok(Self {
+            config: Arc::new(RwLock::new(config)),
+            config_source,
+        })
     }
 
-    fn validate_and_fix(&mut self) {
-        if self.sample_rate == 0 {
-            self.sample_rate = 48000;
-        }
-        if self.buffer_duration == 0 {
-            self.buffer_duration = 60;
-        }
-        if self.server.host.is_empty() {
-            self.server.host = "127.0.0.1".to_string();
-        }
-        if self.server.port == 0 {
-            self.server.port = 3000;
-        }
+    pub async fn reload(&self) -> Result<()> {
+        let new_config = self.config_source.clone().try_deserialize()?;
+        let mut config = self.config.write().await;
+        *config = new_config;
+        info!("Configuration reloaded successfully");
+        Ok(())
     }
 
-    pub fn get_audio_config(&self) -> Result<(Device, StreamConfig)> {
+    pub async fn get_config(&self) -> Arc<Config> {
+        Arc::new(self.config.read().await.clone())
+    }
+
+    pub async fn get_audio_config(&self) -> Result<(cpal::Device, StreamConfig)> {
+        let config = self.config.read().await;
         let host = cpal::default_host();
-        self.find_working_device_and_config(&host)
+        self.find_working_device_and_config(&host, &config).await
     }
 
-    fn find_working_device_and_config(&self, host: &Host) -> Result<(Device, StreamConfig)> {
+    async fn find_working_device_and_config(&self, host: &cpal::Host, config: &Config) -> Result<(cpal::Device, StreamConfig)> {
         let devices = host.input_devices()?;
 
         for device in devices {
             let name = device.name()?;
             info!("Checking device: {}", name);
             
-            if let Some(ref selected) = self.selected_device {
+            if let Some(ref selected) = config.selected_device {
                 if &name != selected {
                     continue;
                 }
             }
 
-            match self.find_supported_config(&device) {
-                Ok(config) => {
-                    info!("Found working config for device {}: {:?}", name, config);
-                    return Ok((device, config));
+            match self.find_supported_config(&device).await {
+                Ok(stream_config) => {
+                    info!("Found working config for device {}: {:?}", name, stream_config);
+                    return Ok((device, stream_config));
                 }
                 Err(e) => {
                     warn!("Config not supported for device {}: {}", name, e);
@@ -83,28 +89,22 @@ impl Config {
         Err(LifeLoggingError::AudioDeviceError("No working audio input device and configuration found".into()))
     }
 
-    fn find_supported_config(&self, device: &Device) -> Result<StreamConfig> {
-        let supported_configs_range = device.supported_input_configs()?;
+    async fn find_supported_config(&self, device: &cpal::Device) -> Result<StreamConfig> {
+        let supported_configs = device.supported_input_configs()?;
         
-        info!("Desired sample rate: {}", self.sample_rate);
-        
-        for range in supported_configs_range {
-            info!("Checking range: {} - {}", range.min_sample_rate().0, range.max_sample_rate().0);
-            if range.min_sample_rate().0 <= self.sample_rate && self.sample_rate <= range.max_sample_rate().0 {
-                let config = range.with_sample_rate(cpal::SampleRate(self.sample_rate));
-                info!("Found exact match for sample rate: {}", self.sample_rate);
-                return Ok(config.config());
+        for config_range in supported_configs {
+            let config = config_range.with_max_sample_rate();
+            info!("Trying config: {:?}", config);
+            
+            // Check if the config is supported
+            if device.default_input_config().map(|c| c.sample_rate().0).unwrap_or(0) == config.sample_rate().0 {
+                return Ok(config.into());
             }
         }
         
-        warn!("No exact match found for sample rate: {}", self.sample_rate);
-        // Fall back to the default config
-        let default_config = device.default_input_config()?;
-        info!("Using default config with sample rate: {}", default_config.sample_rate().0);
-        Ok(default_config.config())
+        // Fallback to default config if no matching config found
+        device.default_input_config()
+            .map(|c| c.into())
+            .map_err(|e| LifeLoggingError::AudioDeviceError(format!("No supported config found: {}", e)))
     }
-}
-
-pub fn load_config() -> Result<Arc<Config>> {
-    Config::new()
 }
