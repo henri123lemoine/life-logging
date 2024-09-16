@@ -1,14 +1,17 @@
 use axum::{
-    extract::State,
-    response::IntoResponse,
+    extract::{State, Query},
+    response::{IntoResponse, Response},
     http::{header, StatusCode},
     Json,
 };
-use serde_json;
+use serde_json::json;
 use std::sync::Arc;
+use std::collections::HashMap;
 use tracing::{info_span, info, error, Instrument};
 use crate::app_state::AppState;
+use crate::audio::encoder::{AudioEncoder, ENCODER_FACTORY};
 use crate::config::CONFIG_MANAGER;
+use crate::error::LifeLoggingError;
 
 pub async fn health_check(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     let uptime = state.start_time.elapsed().unwrap_or_default();
@@ -23,42 +26,55 @@ pub async fn health_check(State(state): State<Arc<AppState>>) -> Json<serde_json
 
 pub async fn get_audio(
     State(state): State<Arc<AppState>>,
-    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>
-) -> impl IntoResponse {
-    let format = params.get("format").map(|s| s.to_lowercase()).unwrap_or_else(|| "wav".to_string());
+    Query(params): Query<HashMap<String, String>>
+) -> Response {
+    let format = params.get("format")
+        .map(|s| s.to_lowercase())
+        .unwrap_or_else(|| "wav".to_string());
     
-    match state.encoder_factory.get_encoder(&format) {
-        Some(encoder) => {
-            let audio_data = state.audio_buffer.read();
-            let sample_rate = state.audio_buffer.sample_rate();
-            match encoder.encode(&audio_data, sample_rate) {
-                Ok(encoded_data) => {
-                    tracing::info!("Successfully encoded {} bytes of {} audio", encoded_data.len(), format);
-                    (
-                        StatusCode::OK,
-                        [
-                            (header::CONTENT_TYPE, encoder.mime_type()),
-                            (header::CONTENT_DISPOSITION, encoder.content_disposition()),
-                        ],
-                        encoded_data,
-                    ).into_response()
-                },
-                Err(e) => {
-                    tracing::error!("Failed to encode audio: {}", e);
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        [(header::CONTENT_TYPE, "application/json")],
-                        Json(serde_json::json!({"error": format!("Failed to encode {}: {}", format.to_uppercase(), e)})).to_string(),
-                    ).into_response()
-                },
-            }
-        },
-        None => (
-            StatusCode::BAD_REQUEST,
-            [(header::CONTENT_TYPE, "application/json")],
-            Json(serde_json::json!({"error": "Unsupported audio format"})).to_string(),
-        ).into_response(),
+    match ENCODER_FACTORY.get_encoder(&format) {
+        Some(encoder) => encode_and_respond(state, encoder.as_ref()).await,
+        None => unsupported_format_response(),
     }
+}
+
+async fn encode_and_respond(state: Arc<AppState>, encoder: &dyn AudioEncoder) -> Response {
+    let audio_data = state.audio_buffer.read();
+    let sample_rate = state.audio_buffer.sample_rate();
+    
+    match encoder.encode(&audio_data, sample_rate) {
+        Ok(encoded_data) => successful_encoding_response(encoder, encoded_data),
+        Err(e) => encoding_error_response(e),
+    }
+}
+
+fn successful_encoding_response(encoder: &dyn AudioEncoder, encoded_data: Vec<u8>) -> Response {
+    info!("Successfully encoded {} bytes of audio", encoded_data.len());
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, encoder.mime_type()),
+            (header::CONTENT_DISPOSITION, encoder.content_disposition()),
+        ],
+        encoded_data,
+    ).into_response()
+}
+
+fn unsupported_format_response() -> Response {
+    (
+        StatusCode::BAD_REQUEST,
+        [(header::CONTENT_TYPE, "application/json")],
+        Json(json!({"error": "Unsupported audio format"})),
+    ).into_response()
+}
+
+fn encoding_error_response(e: LifeLoggingError) -> Response {
+    error!("Failed to encode audio: {}", e);
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        [(header::CONTENT_TYPE, "application/json")],
+        Json(json!({"error": format!("Failed to encode audio: {}", e)})),
+    ).into_response()
 }
 
 pub async fn visualize_audio(State(state): State<Arc<AppState>>) -> impl IntoResponse {
