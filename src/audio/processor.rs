@@ -2,12 +2,13 @@ use cpal::Stream;
 use cpal::traits::{DeviceTrait, StreamTrait};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::task;
 use tokio::sync::{broadcast, mpsc};
 use crate::app_state::AppState;
 use crate::audio::buffer::CircularAudioBuffer;
 use crate::error::Result;
 
-pub fn setup_audio_processing(app_state: &Arc<AppState>) -> Result<()> {
+pub async fn setup_audio_processing(app_state: &Arc<AppState>) -> Result<()> {
     let audio_buffer = app_state.audio_buffer.clone();
     let audio_sender = app_state.audio_sender.clone();
 
@@ -20,7 +21,7 @@ pub fn setup_audio_processing(app_state: &Arc<AppState>) -> Result<()> {
     });
 
     let app_state_clone = app_state.clone();
-    std::thread::spawn(move || {
+    task::spawn_blocking(move || {
         audio_stream_management_task(app_state_clone);
     });
 
@@ -50,7 +51,13 @@ async fn audio_processing_task(
 fn audio_stream_management_task(app_state: Arc<AppState>) {
     loop {
         let (tx, mut rx) = mpsc::channel::<()>(1);
-        let stream = match start_audio_stream(&app_state, tx) {
+        let stream = match task::block_in_place(|| {
+            tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(async {
+                    start_audio_stream(&app_state, tx).await
+                })
+        }) {
             Ok(stream) => stream,
             Err(e) => {
                 tracing::error!("Failed to start audio stream: {}", e);
@@ -76,8 +83,8 @@ fn audio_stream_management_task(app_state: Arc<AppState>) {
     }
 }
 
-fn start_audio_stream(app_state: &Arc<AppState>, tx: mpsc::Sender<()>) -> Result<Stream> {
-    let (device, config) = app_state.config.get_audio_config()?;
+async fn start_audio_stream(app_state: &Arc<AppState>, tx: mpsc::Sender<()>) -> Result<Stream> {
+    let (device, config) = app_state.config_manager.get_audio_config().await?;
     let audio_sender = app_state.audio_sender.clone();
 
     let tx1 = tx.clone();
