@@ -36,6 +36,7 @@ async fn audio_processing_task(
         tokio::select! {
             _ = interval.tick() => {
                 // Process audio data or do whatever every 5 seconds (general template)
+                // I leave this here as a placeholder for any processing that needs to be done later
             }
             result = audio_receiver.recv() => {
                 if let Ok(data) = result {

@@ -108,3 +108,4 @@ This project involves continuous audio recording, which has significant privacy 
 - [Axum](https://github.com/tokio-rs/axum) for the web framework
 - [Tokio](https://github.com/tokio-rs/tokio) for async runtime
 - [Plotters](https://github.com/plotters-rs/plotters) for audio visualization
+- Claude Sonnet 3.5 for help with Rust syntax.
