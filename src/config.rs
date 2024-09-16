@@ -2,6 +2,7 @@ use config::{Config as ConfigSource, Environment, File};
 use serde::Deserialize;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use once_cell::sync::Lazy;
 use cpal::traits::{DeviceTrait, HostTrait};
 use cpal::StreamConfig;
 use tracing::{info, warn};
@@ -21,13 +22,17 @@ pub struct ServerSettings {
     pub port: u16,
 }
 
+pub static CONFIG_MANAGER: Lazy<ConfigManager> = Lazy::new(|| {
+    ConfigManager::new().expect("Failed to initialize ConfigManager")
+});
+
 pub struct ConfigManager {
     config: Arc<RwLock<Config>>,
     config_source: ConfigSource,
 }
 
 impl ConfigManager {
-    pub fn new() -> Result<Self> {
+    fn new() -> Result<Self> {
         let env = std::env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
         let config_source = ConfigSource::builder()
             .add_source(File::with_name("config/default").required(false))
@@ -51,8 +56,8 @@ impl ConfigManager {
         Ok(())
     }
 
-    pub async fn get_config(&self) -> Arc<Config> {
-        Arc::new(self.config.read().await.clone())
+    pub async fn get_config(&self) -> Arc<RwLock<Config>> {
+        self.config.clone()
     }
 
     pub async fn get_audio_config(&self) -> Result<(cpal::Device, StreamConfig)> {

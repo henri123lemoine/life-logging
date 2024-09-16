@@ -6,6 +6,7 @@ use tokio::task;
 use tokio::sync::{broadcast, mpsc};
 use crate::app_state::AppState;
 use crate::audio::buffer::CircularAudioBuffer;
+use crate::config::CONFIG_MANAGER;
 use crate::error::Result;
 
 pub async fn setup_audio_processing(app_state: &Arc<AppState>) -> Result<()> {
@@ -84,7 +85,7 @@ fn audio_stream_management_task(app_state: Arc<AppState>) {
 }
 
 async fn start_audio_stream(app_state: &Arc<AppState>, tx: mpsc::Sender<()>) -> Result<Stream> {
-    let (device, config) = app_state.config_manager.get_audio_config().await?;
+    let (device, config) = CONFIG_MANAGER.get_audio_config().await?;
     let audio_sender = app_state.audio_sender.clone();
 
     let tx1 = tx.clone();

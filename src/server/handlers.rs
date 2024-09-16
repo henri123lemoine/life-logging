@@ -8,6 +8,7 @@ use serde_json;
 use std::sync::Arc;
 use tracing::{info_span, info, error, Instrument};
 use crate::app_state::AppState;
+use crate::config::CONFIG_MANAGER;
 
 pub async fn health_check(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     let uptime = state.start_time.elapsed().unwrap_or_default();
@@ -77,13 +78,13 @@ pub async fn visualize_audio(State(state): State<Arc<AppState>>) -> impl IntoRes
     )
 }
 
-pub async fn reload_config(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+pub async fn reload_config() -> impl IntoResponse {
     let reload_span = info_span!("config_reload");
     
     async {
         info!("Configuration reload initiated");
         
-        match state.config_manager.reload().await {
+        match CONFIG_MANAGER.reload().await {
             Ok(_) => {
                 info!("Configuration reloaded successfully");
                 let response = serde_json::json!({
