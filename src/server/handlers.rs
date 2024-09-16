@@ -7,7 +7,6 @@ use axum::{
 use serde_json;
 use std::sync::Arc;
 use crate::app_state::AppState;
-use crate::audio::encoder::{WavEncoder, FlacEncoder};
 
 pub async fn health_check(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     let uptime = state.start_time.elapsed().unwrap_or_default();
@@ -26,59 +25,33 @@ pub async fn get_audio(
 ) -> impl IntoResponse {
     let format = params.get("format").map(|s| s.to_lowercase()).unwrap_or_else(|| "wav".to_string());
     
-    match format.as_str() {
-        "pcm" => {
-            let pcm_data = state.audio_buffer.read();
-            // Convert f32 samples to bytes
-            let byte_data: Vec<u8> = pcm_data.iter()
-                .flat_map(|&sample| sample.to_le_bytes().to_vec())
-                .collect();
-            (
-                StatusCode::OK,
-                [
-                    (header::CONTENT_TYPE, "audio/pcm"),
-                    (header::CONTENT_DISPOSITION, "attachment; filename=\"audio.pcm\""),
-                ],
-                byte_data,
-            ).into_response()
-        },
-        "wav" => {
-            let wav_encoder = WavEncoder;
-            match state.audio_buffer.encode(wav_encoder) {
-                Ok(wav_data) => (
-                    StatusCode::OK,
-                    [
-                        (header::CONTENT_TYPE, "audio/wav"),
-                        (header::CONTENT_DISPOSITION, "attachment; filename=\"audio.wav\""),
-                    ],
-                    wav_data,
-                ).into_response(),
-                Err(e) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    [(header::CONTENT_TYPE, "application/json")],
-                    Json(serde_json::json!({"error": format!("Failed to encode WAV: {}", e)})).to_string(),
-                ).into_response(),
+    match state.encoder_factory.get_encoder(&format) {
+        Some(encoder) => {
+            let audio_data = state.audio_buffer.read();
+            tracing::debug!("Retrieved {} audio samples for encoding", audio_data.len());
+            match encoder.encode(&audio_data, state.config.sample_rate) {
+                Ok(encoded_data) => {
+                    tracing::info!("Successfully encoded {} bytes of {} audio", encoded_data.len(), format);
+                    (
+                        StatusCode::OK,
+                        [
+                            (header::CONTENT_TYPE, encoder.mime_type()),
+                            (header::CONTENT_DISPOSITION, encoder.content_disposition()),
+                        ],
+                        encoded_data,
+                    ).into_response()
+                },
+                Err(e) => {
+                    tracing::error!("Failed to encode audio: {}", e);
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        [(header::CONTENT_TYPE, "application/json")],
+                        Json(serde_json::json!({"error": format!("Failed to encode {}: {}", format.to_uppercase(), e)})).to_string(),
+                    ).into_response()
+                },
             }
         },
-        "flac" => {
-            let flac_encoder = FlacEncoder;
-            match state.audio_buffer.encode(flac_encoder) {
-                Ok(flac_data) => (
-                    StatusCode::OK,
-                    [
-                        (header::CONTENT_TYPE, "audio/flac"),
-                        (header::CONTENT_DISPOSITION, "attachment; filename=\"audio.flac\""),
-                    ],
-                    flac_data,
-                ).into_response(),
-                Err(e) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    [(header::CONTENT_TYPE, "application/json")],
-                    Json(serde_json::json!({"error": format!("Failed to encode FLAC: {}", e)})).to_string(),
-                ).into_response(),
-            }
-        },
-        _ => (
+        None => (
             StatusCode::BAD_REQUEST,
             [(header::CONTENT_TYPE, "application/json")],
             Json(serde_json::json!({"error": "Unsupported audio format"})).to_string(),
