@@ -5,6 +5,6 @@ cargo build --release
 # Get the name of the binary from Cargo.toml
 BINARY_NAME=$(grep -m1 'name =' Cargo.toml | cut -d '"' -f2)
 # Run the program in the background
-mkdir -p data/logs
-nohup "./target/release/$BINARY_NAME" > data/logs/output.log 2>&1 &
+mkdir logs
+nohup "./target/release/$BINARY_NAME" > logs/server.log 2>&1 &
 echo "Program started in background. PID: $!"

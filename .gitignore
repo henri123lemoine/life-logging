@@ -25,3 +25,4 @@ config/*.toml
 !config/default.toml
 
 data/
+logs/
