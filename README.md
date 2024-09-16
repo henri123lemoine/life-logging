@@ -1,6 +1,9 @@
-# Life-Logging
+# Lifelogging
 
-Life-Logging is a Rust-based project for [life logging](https://en.wikipedia.org/wiki/Lifelog). The objective is to be a low-memory project that makes it easy for other projects on your machine to access audio data, transcription, keypresses, and more. This project is meant only for personal use.
+![GitHub release (latest by date)](https://img.shields.io/github/v/release/henri123lemoine/life-logging)
+![GitHub](https://img.shields.io/github/license/henri123lemoine/life-logging)
+
+Lifelogging is a Rust-based project for [lifelogging](https://en.wikipedia.org/wiki/Lifelog). It runs a low-memory server that makes it easy for other projects on your machine to access audio data, transcriptions, keypresses, and more. This project is meant only for personal use.
 
 ## Features
 
@@ -11,20 +14,12 @@ Audio:
 - API to retrieve audio data as PCM/WAV/FLAC files.
 - Configurable buffer size and sample rate.
 
-Transcription:
-
-- TODO
-
-Keypress:
-
-- TODO
-
 ## Getting Started
 
 ### Prerequisites
 
-- Rust 1.54 or later
-- An audio input device
+- Rust (latest stable version)
+- A system with audio input capabilities
 
 ### Installation
 
@@ -34,22 +29,45 @@ Keypress:
    cd life-logging
    ```
 
-2. Run the server:
+2. Build the project:
    ```bash
-   cargo run
+   cargo build --release
    ```
 
-The server will start on `http://127.0.0.1:61429`, or whatever port you chose in your configuration.
+3. Run the server:
+   There are two options for running the server:
+   - To run the server in the foreground (useful for debugging):
+      ```bash
+      cargo run --release
+      ```
+      To close the server, press `Ctrl+C`.
+   - To run the server in the background:
+      ```bash
+      chmod +x run_background.sh  # Make the script executable (first time only)
+      ./run_background.sh
+      ```
+      This will start the server in the background and log output to `logs/output.log`. You can run `tail -f logs/output.log` to view the logs in real time.
+      Closing: Run `ps aux | grep life-logging` to find the process ID, then run `kill <PID>` to kill the process.
+
+The server will start on `http://127.0.0.1:61429`, or whichever port is chosen in your configuration.
 
 ## Usage
 
-- **Get Audio**: `GET /get_audio` - Returns the most recent audio data as a WAV file. `/get_audio` takes the following query parameters:
+- **Get Audio**: `GET /get_audio` - Returns the most recent audio data. Query parameters:
   - `format`: The audio format to return. Supported formats are `pcm`, `wav`, and `flac`. Default is `wav`.
-  <!-- - `duration`: The duration of audio to return in seconds. Default is 10 seconds. -->
-- **Visualize Audio**: `GET /visualize_audio` - Returns a PNG image visualizing the recent audio data.
+- **Visualize Audio**: `GET /visualize_audio` - Returns a PNG image visualizing the recent audio data. Useful for debugging.
 - **Health Check**: `GET /health` - Returns the server's health status.
 
-## Configuration
+### Examples
+
+Retrieve the last minute of audio in WAV format:
+```bash
+curl "http://127.0.0.1:61429/get_audio?format=wav" --output recent_audio.wav
+```
+
+Visualize recent audio data: Go to `http://127.0.0.1:61429/visualize_audio` in your browser.
+
+### Configuration
 
 Current configuration is set in `config/default.toml`:
 
@@ -58,29 +76,31 @@ Current configuration is set in `config/default.toml`:
 - `[server] host`: "127.0.0.1"
 - `[server] port`: 61429
 
+To override the default configuration, add a `.toml` file to the `config` directory with your preferred settings. The server will automatically load the configuration from this file.
+
+Set the `RUST_LOG` environment variable to `info` or `debug` to see more detailed logs.
+
+## Security Considerations
+
+This project involves continuous audio recording, which has significant privacy implications. Please ensure you:
+
+- Use this software only for personal use on your own devices.
+- Inform anyone in the vicinity that audio is being recorded.
+- Securely store and manage any saved audio data.
+- Do not use this software in jurisdictions where continuous audio recording may be illegal.
+
 ## Future Improvements
 
-Since this is just a server that provides information to other projects, many features can be added. The following come to mind:
-
-- Streaming audio data
-- Audio analysis
-- Transcription
-- Keypress logging
-
-More detailedly,
-
-High priotity:
-
-- Select between available audio devices, no need for configuring sampling rate if this can be determined from device. (Handle multiple simulatneous devices?)
-- Websocket support for real-time audio streaming
-- Long-term storage and retrieval of audio data (e.g. save audio data to disk every minute, and persist in s3 once a day)
-- Transcription from audio data. E.g.: Every 30(?) seconds, get audio from last minute, transcribe it, and combine to previous previous transcriptions with diff(?) algorithm to make a full-time transcription. In fact, estimate the memory/RAM cost of having continuous live transcription, just to verify that this is feasible.
-- If someone says something insightful, simple keybind saves the audio+transcribed quote in a quotes folder.
-
-Low priority:
-
-- Audio analysis. E.g.: Detect live note (for whistling/singing practice), clean up audio, etc.
-- Additional audio format support (MP3, OGG)
+- [ ] Select between available audio devices
+  - [ ] When some audio device is disconnected, automatically switch to another available device
+  - [ ] Handle multiple simultaneous devices (?)
+- [ ] Websocket support for real-time audio streaming
+- [ ] Long-term audio persistence with s3
+  - [ ] Efficient compression with Opus at 32kbps and silence removal
+- [ ] Transcription with whisperx
+- [ ] Audio analysis (e.g., live note detection)
+- [ ] Keypress logging integration
+- [ ] Occasional screenshots (?)
 
 ## Acknowledgments
 
