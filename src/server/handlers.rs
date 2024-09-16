@@ -6,6 +6,7 @@ use axum::{
 };
 use serde_json;
 use std::sync::Arc;
+use tracing::{info_span, info, error, Instrument};
 use crate::app_state::AppState;
 
 pub async fn health_check(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
@@ -28,8 +29,8 @@ pub async fn get_audio(
     match state.encoder_factory.get_encoder(&format) {
         Some(encoder) => {
             let audio_data = state.audio_buffer.read();
-            tracing::debug!("Retrieved {} audio samples for encoding", audio_data.len());
-            match encoder.encode(&audio_data, state.config.sample_rate) {
+            let sample_rate = state.audio_buffer.sample_rate();
+            match encoder.encode(&audio_data, sample_rate) {
                 Ok(encoded_data) => {
                     tracing::info!("Successfully encoded {} bytes of {} audio", encoded_data.len(), format);
                     (
@@ -74,4 +75,31 @@ pub async fn visualize_audio(State(state): State<Arc<AppState>>) -> impl IntoRes
         ],
         image_data,
     )
+}
+
+pub async fn reload_config(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let reload_span = info_span!("config_reload");
+    
+    async {
+        info!("Configuration reload initiated");
+        
+        match state.config_manager.reload().await {
+            Ok(_) => {
+                info!("Configuration reloaded successfully");
+                let response = serde_json::json!({
+                    "status": "ok",
+                    "message": "Configuration reloaded successfully"
+                });
+                (StatusCode::OK, Json(response))
+            },
+            Err(e) => {
+                error!(error = %e, "Failed to reload configuration");
+                let response = serde_json::json!({
+                    "status": "error",
+                    "message": format!("Failed to reload configuration: {}", e)
+                });
+                (StatusCode::INTERNAL_SERVER_ERROR, Json(response))
+            }
+        }
+    }.instrument(reload_span).await
 }
