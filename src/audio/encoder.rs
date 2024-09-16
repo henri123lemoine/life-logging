@@ -5,10 +5,13 @@ use tempfile::NamedTempFile;
 use opus::{Channels, Application, Bitrate};
 use crate::error::{LifeLoggingError, Result};
 
-pub trait AudioEncoder {
+use std::collections::HashMap;
+
+pub trait AudioEncoder: Send + Sync {
     fn encode(&self, data: &[f32], sample_rate: u32) -> Result<Vec<u8>>;
     fn mime_type(&self) -> &'static str;
     fn file_extension(&self) -> &'static str;
+    fn content_disposition(&self) -> &'static str;
 }
 
 pub struct PcmEncoder;
@@ -27,6 +30,10 @@ impl AudioEncoder for PcmEncoder {
 
     fn file_extension(&self) -> &'static str {
         "pcm"
+    }
+    
+    fn content_disposition(&self) -> &'static str {
+        "attachment; filename=\"audio.pcm\""
     }
 }
 
@@ -80,6 +87,10 @@ impl AudioEncoder for WavEncoder {
     fn file_extension(&self) -> &'static str {
         "wav"
     }
+
+    fn content_disposition(&self) -> &'static str {
+        "attachment; filename=\"audio.wav\""
+    }
 }
 
 pub struct FlacEncoder;
@@ -115,6 +126,10 @@ impl AudioEncoder for FlacEncoder {
 
     fn file_extension(&self) -> &'static str {
         "wav"
+    }
+
+    fn content_disposition(&self) -> &'static str {
+        "attachment; filename=\"audio.flac\""
     }
 }
 
@@ -161,5 +176,28 @@ impl AudioEncoder for OpusEncoder {
 
     fn file_extension(&self) -> &'static str {
         "wav"
+    }
+
+    fn content_disposition(&self) -> &'static str {
+        "attachment; filename=\"audio.opus\""
+    }
+}
+
+pub struct EncoderFactory {
+    encoders: HashMap<String, Box<dyn AudioEncoder>>,
+}
+
+impl EncoderFactory {
+    pub fn new() -> Self {
+        let mut encoders = HashMap::new();
+        encoders.insert("pcm".to_string(), Box::new(PcmEncoder) as Box<dyn AudioEncoder>);
+        encoders.insert("wav".to_string(), Box::new(WavEncoder) as Box<dyn AudioEncoder>);
+        encoders.insert("flac".to_string(), Box::new(FlacEncoder) as Box<dyn AudioEncoder>);
+        encoders.insert("opus".to_string(), Box::new(OpusEncoder) as Box<dyn AudioEncoder>);
+        Self { encoders }
+    }
+
+    pub fn get_encoder(&self, format: &str) -> Option<&Box<dyn AudioEncoder>> {
+        self.encoders.get(format)
     }
 }
