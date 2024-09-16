@@ -1,6 +1,6 @@
 # Lifelogging
 
-![GitHub release (latest by date)](https://img.shields.io/github/v/release/henri123lemoine/life-logging)
+![GitHub release (latest by date including pre-releases)](https://img.shields.io/github/v/release/henri123lemoine/life-logging?include_prereleases)
 ![GitHub](https://img.shields.io/github/license/henri123lemoine/life-logging)
 
 Lifelogging is a Rust-based project for [lifelogging](https://en.wikipedia.org/wiki/Lifelog). It runs a low-memory server that makes it easy for other projects on your machine to access audio data, transcriptions, keypresses, and more. This project is meant only for personal use.
@@ -121,14 +121,11 @@ This project involves continuous audio recording, which has significant privacy 
 
 ## Future Improvements
 
-- [ ] Select between available audio devices
-  - [x] When some audio device is disconnected, automatically switch to another available device
-  - [ ] Handle multiple simultaneous devices (?)
-- [ ] Websocket support for real-time audio streaming
 - [ ] Long-term audio persistence with s3
   - [ ] Efficient compression with Opus at 32kbps and silence removal
 - [ ] Transcription with whisperx
 - [ ] Audio analysis (e.g., live note detection)
+- [ ] Websocket support for real-time audio streaming
 - [ ] Keypress logging integration
 - [ ] Occasional screenshots (?)
 
