@@ -7,6 +7,27 @@ use crate::error::{LifeLoggingError, Result};
 
 pub trait AudioEncoder {
     fn encode(&self, data: &[f32], sample_rate: u32) -> Result<Vec<u8>>;
+    fn mime_type(&self) -> &'static str;
+    fn file_extension(&self) -> &'static str;
+}
+
+pub struct PcmEncoder;
+
+impl AudioEncoder for PcmEncoder {
+    fn encode(&self, data: &[f32], _sample_rate: u32) -> Result<Vec<u8>> {
+        let byte_data: Vec<u8> = data.iter()
+            .flat_map(|&sample| sample.to_le_bytes().to_vec())
+            .collect();
+        Ok(byte_data)
+    }
+
+    fn mime_type(&self) -> &'static str {
+        "audio/pcm"
+    }
+
+    fn file_extension(&self) -> &'static str {
+        "pcm"
+    }
 }
 
 pub struct WavEncoder;
@@ -51,6 +72,14 @@ impl AudioEncoder for WavEncoder {
         info!("Encoded {} samples into {} bytes of WAV data", data.len(), buffer.len());
         Ok(buffer)
     }
+
+    fn mime_type(&self) -> &'static str {
+        "audio/wav"
+    }
+
+    fn file_extension(&self) -> &'static str {
+        "wav"
+    }
 }
 
 pub struct FlacEncoder;
@@ -78,6 +107,14 @@ impl AudioEncoder for FlacEncoder {
 
         info!("Encoded {} samples into {} bytes of FLAC data", data.len(), output.stdout.len());
         Ok(output.stdout)
+    }
+
+    fn mime_type(&self) -> &'static str {
+        "audio/wav"
+    }
+
+    fn file_extension(&self) -> &'static str {
+        "wav"
     }
 }
 
@@ -116,5 +153,13 @@ impl AudioEncoder for OpusEncoder {
 
         info!("Encoded {} samples into {} bytes of Opus data", data.len(), output.len());
         Ok(output)
+    }
+
+    fn mime_type(&self) -> &'static str {
+        "audio/wav"
+    }
+
+    fn file_extension(&self) -> &'static str {
+        "wav"
     }
 }
