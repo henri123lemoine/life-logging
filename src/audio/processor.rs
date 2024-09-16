@@ -5,12 +5,16 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::task;
 use tokio::sync::{broadcast, mpsc};
+use tracing::{info, warn, instrument};
 use crate::app_state::AppState;
 use crate::audio::buffer::CircularAudioBuffer;
 use crate::config::CONFIG_MANAGER;
 use crate::error::Result;
 
+#[instrument(skip(app_state))]
 pub async fn setup_audio_processing(app_state: &Arc<AppState>) -> Result<()> {
+    info!("Setting up audio processing");
+
     let audio_buffer = app_state.audio_buffer.clone();
     let audio_sender = app_state.audio_sender.clone();
 
@@ -30,10 +34,13 @@ pub async fn setup_audio_processing(app_state: &Arc<AppState>) -> Result<()> {
     Ok(())
 }
 
+#[instrument(skip(audio_buffer, audio_receiver))]
 async fn audio_processing_task(
     audio_buffer: Arc<CircularAudioBuffer>,
     audio_receiver: &mut broadcast::Receiver<Vec<f32>>,
 ) {
+    info!("Starting audio processing task");
+
     let mut interval = tokio::time::interval(Duration::from_secs(5));
     loop {
         tokio::select! {
@@ -50,7 +57,10 @@ async fn audio_processing_task(
     }
 }
 
+#[instrument(skip(app_state))]
 fn audio_stream_management_task(app_state: Arc<AppState>) {
+    info!("Starting audio stream management task");
+
     loop {
         let (tx, mut rx) = mpsc::channel::<()>(1);
         let stream = match task::block_in_place(|| {
@@ -85,7 +95,10 @@ fn audio_stream_management_task(app_state: Arc<AppState>) {
     }
 }
 
+#[instrument(skip(app_state, tx))]
 async fn start_audio_stream(app_state: &Arc<AppState>, tx: mpsc::Sender<()>) -> Result<Stream> {
+    info!("Starting audio stream");
+
     let (device, config) = CONFIG_MANAGER.get_audio_config().await?;
     let audio_sender = app_state.audio_sender.clone();
 

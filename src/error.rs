@@ -41,6 +41,9 @@ pub enum LifeLoggingError {
 
     #[error("Device name error: {0}")]
     DeviceNameError(#[from] DeviceNameError),
+
+    // #[error("Audio processing error: {0}")]
+    // AudioProcessingError(String),
 }
 
 pub type Result<T> = std::result::Result<T, LifeLoggingError>;
