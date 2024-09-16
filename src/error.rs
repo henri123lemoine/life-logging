@@ -2,6 +2,7 @@ use thiserror::Error;
 use cpal::DevicesError;
 use cpal::SupportedStreamConfigsError;
 use cpal::DefaultStreamConfigError;
+use cpal::DeviceNameError;
 
 #[derive(Error, Debug)]
 pub enum LifeLoggingError {
@@ -37,6 +38,9 @@ pub enum LifeLoggingError {
 
     #[error("Default stream config error: {0}")]
     DefaultStreamConfigError(#[from] DefaultStreamConfigError),
+
+    #[error("Device name error: {0}")]
+    DeviceNameError(#[from] DeviceNameError),
 }
 
 pub type Result<T> = std::result::Result<T, LifeLoggingError>;

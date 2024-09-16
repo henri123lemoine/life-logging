@@ -11,6 +11,7 @@ pub struct Config {
     pub sample_rate: u32,
     pub buffer_duration: u64,
     pub server: ServerSettings,
+    pub selected_device: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -56,24 +57,29 @@ impl Config {
 
     fn find_working_device_and_config(&self, host: &Host) -> Result<(Device, StreamConfig)> {
         let devices = host.input_devices()?;
-        
+
         for device in devices {
-            if let Ok(name) = device.name() {
-                info!("Checking device: {}", name);
-            }
+            let name = device.name()?;
+            info!("Checking device: {}", name);
             
+            if let Some(ref selected) = self.selected_device {
+                if &name != selected {
+                    continue;
+                }
+            }
+
             match self.find_supported_config(&device) {
                 Ok(config) => {
-                    info!("Found working config for device {:?}: {:?}", device.name(), config);
+                    info!("Found working config for device {}: {:?}", name, config);
                     return Ok((device, config));
                 }
                 Err(e) => {
-                    warn!("Config not supported for device {:?}: {}", device.name(), e);
+                    warn!("Config not supported for device {}: {}", name, e);
                     continue;
                 }
             }
         }
-        
+
         Err(LifeLoggingError::AudioDeviceError("No working audio input device and configuration found".into()))
     }
 
