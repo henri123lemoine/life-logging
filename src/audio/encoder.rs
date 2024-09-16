@@ -1,3 +1,4 @@
+use once_cell::sync::Lazy;
 use tracing::info;
 use std::process::Command;
 use std::io::Write;
@@ -183,20 +184,20 @@ impl AudioEncoder for OpusEncoder {
     }
 }
 
+pub static ENCODER_FACTORY: Lazy<EncoderFactory> = Lazy::new(|| {
+    let mut encoders = HashMap::new();
+    encoders.insert("pcm".to_string(), Box::new(PcmEncoder) as Box<dyn AudioEncoder>);
+    encoders.insert("wav".to_string(), Box::new(WavEncoder) as Box<dyn AudioEncoder>);
+    encoders.insert("flac".to_string(), Box::new(FlacEncoder) as Box<dyn AudioEncoder>);
+    encoders.insert("opus".to_string(), Box::new(OpusEncoder) as Box<dyn AudioEncoder>);
+    EncoderFactory { encoders }
+});
+
 pub struct EncoderFactory {
     encoders: HashMap<String, Box<dyn AudioEncoder>>,
 }
 
 impl EncoderFactory {
-    pub fn new() -> Self {
-        let mut encoders = HashMap::new();
-        encoders.insert("pcm".to_string(), Box::new(PcmEncoder) as Box<dyn AudioEncoder>);
-        encoders.insert("wav".to_string(), Box::new(WavEncoder) as Box<dyn AudioEncoder>);
-        encoders.insert("flac".to_string(), Box::new(FlacEncoder) as Box<dyn AudioEncoder>);
-        encoders.insert("opus".to_string(), Box::new(OpusEncoder) as Box<dyn AudioEncoder>);
-        Self { encoders }
-    }
-
     pub fn get_encoder(&self, format: &str) -> Option<&Box<dyn AudioEncoder>> {
         self.encoders.get(format)
     }
