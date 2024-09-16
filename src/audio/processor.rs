@@ -110,3 +110,23 @@ async fn start_audio_stream(app_state: &Arc<AppState>, tx: mpsc::Sender<()>) -> 
 
     Ok(stream)
 }
+
+pub fn normalize_volume(data: &mut [f32], target_peak: f32) -> Result<()> {
+    if data.is_empty() {
+        return Ok(());
+    }
+
+    let max_amplitude = data.iter().map(|&x| x.abs()).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+    
+    if max_amplitude == 0.0 {
+        return Ok(());
+    }
+
+    let scale_factor = target_peak / max_amplitude;
+
+    for sample in data.iter_mut() {
+        *sample *= scale_factor;
+    }
+
+    Ok(())
+}
