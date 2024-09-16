@@ -83,4 +83,10 @@ impl CircularAudioBuffer {
         let data = self.read();
         processor::detect_silence(&data, threshold)
     }
+
+    #[allow(dead_code)]
+    pub fn compute_spectrum(&self) -> Vec<f32> {
+        let data = self.read();
+        processor::compute_spectrum(&data)
+    }
 }

@@ -154,23 +154,16 @@ pub fn detect_silence(data: &[f32], threshold: f32) -> Vec<(usize, usize)> {
     silence_ranges
 }
 
-pub fn compute_spectrum(data: &[f32], sample_rate: u32) -> Vec<f32> {
+pub fn compute_spectrum(data: &[f32]) -> Vec<f32> {
     let mut planner = FftPlanner::new();
     let fft = planner.plan_fft_forward(data.len());
 
     let mut buffer: Vec<Complex<f32>> = data.iter().map(|&x| Complex::new(x, 0.0)).collect();
     fft.process(&mut buffer);
 
-    let nyquist = sample_rate as f32 / 2.0;
-    let freq_step = nyquist / (buffer.len() as f32 / 2.0);
-
-    buffer[..buffer.len() / 2]
+    // We only need the first half of the spectrum due to symmetry
+    buffer[..(buffer.len() + 1) / 2]
         .iter()
-        .enumerate()
-        .map(|(i, c)| {
-            let magnitude = c.norm();
-            let frequency = i as f32 * freq_step;
-            magnitude
-        })
+        .map(|c| c.norm())
         .collect()
 }
