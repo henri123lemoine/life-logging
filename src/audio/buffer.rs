@@ -47,12 +47,6 @@ impl CircularAudioBuffer {
         audio_data
     }
 
-    #[allow(dead_code)]
-    pub fn capacity(&self) -> usize {
-        self.capacity
-    }
-
-    #[allow(dead_code)]
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
     }
