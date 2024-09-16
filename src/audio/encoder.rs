@@ -11,7 +11,6 @@ use std::collections::HashMap;
 pub trait AudioEncoder: Send + Sync {
     fn encode(&self, data: &[f32], sample_rate: u32) -> Result<Vec<u8>>;
     fn mime_type(&self) -> &'static str;
-    fn file_extension(&self) -> &'static str;
     fn content_disposition(&self) -> &'static str;
 }
 
@@ -29,10 +28,6 @@ impl AudioEncoder for PcmEncoder {
         "audio/pcm"
     }
 
-    fn file_extension(&self) -> &'static str {
-        "pcm"
-    }
-    
     fn content_disposition(&self) -> &'static str {
         "attachment; filename=\"audio.pcm\""
     }
@@ -85,10 +80,6 @@ impl AudioEncoder for WavEncoder {
         "audio/wav"
     }
 
-    fn file_extension(&self) -> &'static str {
-        "wav"
-    }
-
     fn content_disposition(&self) -> &'static str {
         "attachment; filename=\"audio.wav\""
     }
@@ -123,10 +114,6 @@ impl AudioEncoder for FlacEncoder {
 
     fn mime_type(&self) -> &'static str {
         "audio/wav"
-    }
-
-    fn file_extension(&self) -> &'static str {
-        "wav"
     }
 
     fn content_disposition(&self) -> &'static str {
@@ -173,10 +160,6 @@ impl AudioEncoder for OpusEncoder {
 
     fn mime_type(&self) -> &'static str {
         "audio/wav"
-    }
-
-    fn file_extension(&self) -> &'static str {
-        "wav"
     }
 
     fn content_disposition(&self) -> &'static str {
