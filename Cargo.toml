@@ -8,6 +8,7 @@ axum = "0.7.5"
 axum-server = "0.7.1"
 config = "0.14.0"
 cpal = "0.15.3"
+opus = "0.3.0"
 plotters = "0.3.7"
 png = "0.17.13"
 serde = { version = "1.0.210", features = ["derive"] }

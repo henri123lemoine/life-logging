@@ -2,6 +2,7 @@ use tracing::info;
 use std::process::Command;
 use std::io::Write;
 use tempfile::NamedTempFile;
+use opus::{Channels, Application, Bitrate};
 use crate::error::{LifeLoggingError, Result};
 
 pub trait AudioEncoder {
@@ -77,5 +78,43 @@ impl AudioEncoder for FlacEncoder {
 
         info!("Encoded {} samples into {} bytes of FLAC data", data.len(), output.stdout.len());
         Ok(output.stdout)
+    }
+}
+
+pub struct OpusEncoder;
+
+impl AudioEncoder for OpusEncoder {
+    fn encode(&self, data: &[f32], sample_rate: u32) -> Result<Vec<u8>> {
+        // Configure the Opus encoder
+        let mut encoder = opus::Encoder::new(
+            sample_rate,
+            Channels::Mono,
+            Application::Audio
+        ).map_err(|e| LifeLoggingError::EncodingError(format!("Failed to create Opus encoder: {}", e)))?;
+
+        // Set the bitrate to 32 kbps
+        encoder.set_bitrate(Bitrate::Bits(32000))
+            .map_err(|e| LifeLoggingError::EncodingError(format!("Failed to set Opus bitrate: {}", e)))?;
+
+        // Opus works with 20ms frames, so we need to calculate the frame size
+        let frame_size = (sample_rate as usize / 1000) * 20;
+        
+        // Prepare the output buffer
+        // The maximum size of an Opus packet for this configuration
+        let max_packet_size = 1275; // This is the maximum for 48kHz stereo
+        let mut output = Vec::new();
+
+        // Encode the audio data in 20ms frames
+        for chunk in data.chunks(frame_size) {
+            let mut packet = vec![0u8; max_packet_size];
+            let packet_len = encoder.encode_float(chunk, &mut packet)
+                .map_err(|e| LifeLoggingError::EncodingError(format!("Failed to encode Opus frame: {}", e)))?;
+            
+            output.extend_from_slice(&(packet_len as u32).to_le_bytes());
+            output.extend_from_slice(&packet[..packet_len]);
+        }
+
+        info!("Encoded {} samples into {} bytes of Opus data", data.len(), output.len());
+        Ok(output)
     }
 }
