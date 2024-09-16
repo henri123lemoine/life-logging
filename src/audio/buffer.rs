@@ -63,9 +63,13 @@ impl CircularAudioBuffer {
         AudioVisualizer::create_waveform(&audio_data, width, height)
     }
 
-    pub fn encode<T: AudioEncoder>(&self, encoder: T) -> Result<Vec<u8>> {
+    pub fn encode(&self, encoder: &dyn AudioEncoder) -> Result<Vec<u8>> {
         let audio_data = self.read();
         info!("Encoding {} samples of audio data", audio_data.len());
         encoder.encode(&audio_data, self.sample_rate)
+    }
+
+    pub fn len(&self) -> usize {
+        self.capacity
     }
 }
