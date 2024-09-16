@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tracing::info;
 use crate::audio::encoder::AudioEncoder;
+use crate::audio::processor;
 use crate::audio::visualizer::AudioVisualizer;
 use crate::error::Result;
 
@@ -57,13 +58,29 @@ impl CircularAudioBuffer {
         AudioVisualizer::create_waveform(&audio_data, width, height)
     }
 
+    #[allow(dead_code)]
     pub fn encode(&self, encoder: &dyn AudioEncoder) -> Result<Vec<u8>> {
         let audio_data = self.read();
         info!("Encoding {} samples of audio data", audio_data.len());
         encoder.encode(&audio_data, self.sample_rate)
     }
 
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.capacity
+    }
+
+    #[allow(dead_code)]
+    pub fn normalize_volume(&mut self, target_peak: f32) -> Result<()> {
+        let mut data = self.read();
+        processor::normalize_volume(&mut data, target_peak)?;
+        self.write(&data);
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub fn detect_silence(&self, threshold: f32) -> Vec<(usize, usize)> {
+        let data = self.read();
+        processor::detect_silence(&data, threshold)
     }
 }
