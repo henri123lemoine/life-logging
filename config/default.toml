@@ -1,6 +1,8 @@
-sample_rate = 48000
-buffer_duration = 60
+buffer_duration = 120
 
 [server]
 host = "127.0.0.1"
 port = 61429
+
+# Optional: Set a specific audio device
+# selected_device = "Default"
