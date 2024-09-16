@@ -1,5 +1,6 @@
 use cpal::Stream;
 use cpal::traits::{DeviceTrait, StreamTrait};
+use rustfft::{FftPlanner, num_complex::Complex};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task;
@@ -151,4 +152,25 @@ pub fn detect_silence(data: &[f32], threshold: f32) -> Vec<(usize, usize)> {
     }
 
     silence_ranges
+}
+
+pub fn compute_spectrum(data: &[f32], sample_rate: u32) -> Vec<f32> {
+    let mut planner = FftPlanner::new();
+    let fft = planner.plan_fft_forward(data.len());
+
+    let mut buffer: Vec<Complex<f32>> = data.iter().map(|&x| Complex::new(x, 0.0)).collect();
+    fft.process(&mut buffer);
+
+    let nyquist = sample_rate as f32 / 2.0;
+    let freq_step = nyquist / (buffer.len() as f32 / 2.0);
+
+    buffer[..buffer.len() / 2]
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let magnitude = c.norm();
+            let frequency = i as f32 * freq_step;
+            magnitude
+        })
+        .collect()
 }
