@@ -130,3 +130,25 @@ pub fn normalize_volume(data: &mut [f32], target_peak: f32) -> Result<()> {
 
     Ok(())
 }
+
+pub fn detect_silence(data: &[f32], threshold: f32) -> Vec<(usize, usize)> {
+    let mut silence_ranges = Vec::new();
+    let mut silence_start: Option<usize> = None;
+
+    for (i, &sample) in data.iter().enumerate() {
+        if sample.abs() < threshold {
+            if silence_start.is_none() {
+                silence_start = Some(i);
+            }
+        } else if let Some(start) = silence_start {
+            silence_ranges.push((start, i));
+            silence_start = None;
+        }
+    }
+
+    if let Some(start) = silence_start {
+        silence_ranges.push((start, data.len()));
+    }
+
+    silence_ranges
+}
