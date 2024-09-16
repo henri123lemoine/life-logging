@@ -4,12 +4,14 @@ use tokio::sync::broadcast;
 use crate::audio::buffer::CircularAudioBuffer;
 use crate::config::Config;
 use crate::error::Result;
+use crate::audio::encoder::EncoderFactory;
 
 pub struct AppState {
     pub audio_buffer: Arc<CircularAudioBuffer>,
     pub audio_sender: broadcast::Sender<Vec<f32>>,
     pub start_time: SystemTime,
     pub config: Arc<Config>,
+    pub encoder_factory: EncoderFactory,
 }
 
 impl AppState {
@@ -23,6 +25,7 @@ impl AppState {
             audio_sender,
             start_time: SystemTime::now(),
             config: config.clone(),
+            encoder_factory: EncoderFactory::new(),
         });
 
         // Initialize buffer with silence
