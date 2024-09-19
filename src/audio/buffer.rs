@@ -10,6 +10,7 @@ pub struct CircularAudioBuffer {
     pub write_position: usize,
     pub capacity: usize,
     pub sample_rate: u32,
+    pub is_consistent: bool,
 }
 
 impl CircularAudioBuffer {
@@ -20,6 +21,7 @@ impl CircularAudioBuffer {
             write_position: 0,
             capacity,
             sample_rate,
+            is_consistent: true,
         }
     }
 
@@ -34,9 +36,16 @@ impl CircularAudioBuffer {
 
         let new_position = (current_position + data_len) % self.capacity;
         self.write_position = new_position;
+        self.is_consistent = true;
     }
 
     pub fn read(&self, duration: Option<Duration>) -> Vec<f32> {
+        // Check if the buffer is in a consistent state
+        // TODO: Remove this check in release builds
+        if !self.is_consistent {
+            panic!("CircularAudioBuffer is in an inconsistent state");
+        }
+
         let (start_pos, samples_to_return) = if let Some(duration) = duration {
             let samples_per_second = self.sample_rate as usize;
             let samples_to_return = (duration.as_secs() as usize * samples_per_second)
