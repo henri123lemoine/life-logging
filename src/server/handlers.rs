@@ -44,7 +44,8 @@ pub async fn get_audio(
 }
 
 async fn encode_and_respond(state: Arc<AppState>, encoder: &dyn AudioEncoder, duration: Option<Duration>) -> Response {
-    match state.audio_buffer.encode(encoder, duration) {
+    let audio_buffer = state.audio_buffer.read().unwrap();
+    match audio_buffer.encode(encoder, duration) {
         Ok(encoded_data) => successful_encoding_response(encoder, encoded_data),
         Err(e) => encoding_error_response(e),
     }
@@ -82,7 +83,8 @@ fn encoding_error_response(e: LifeLoggingError) -> Response {
 pub async fn visualize_audio(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let width = 800;
     let height = 400;
-    let image_data = state.audio_buffer.visualize(width, height);
+    let audio_buffer = state.audio_buffer.read().unwrap();
+    let image_data = audio_buffer.visualize(width, height);
 
     tracing::info!("Generated audio visualization image");
 

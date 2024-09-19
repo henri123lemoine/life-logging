@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 use cpal::Stream;
 use cpal::traits::{DeviceTrait, StreamTrait};
 use rustfft::{FftPlanner, num_complex::Complex};
@@ -36,7 +36,7 @@ pub async fn setup_audio_processing(app_state: &Arc<AppState>) -> Result<()> {
 
 #[instrument(skip(audio_buffer, audio_receiver))]
 async fn audio_processing_task(
-    audio_buffer: Arc<CircularAudioBuffer>,
+    audio_buffer: Arc<RwLock<CircularAudioBuffer>>,
     audio_receiver: &mut broadcast::Receiver<Vec<f32>>,
 ) {
     info!("Starting audio processing task");
@@ -50,7 +50,8 @@ async fn audio_processing_task(
             }
             result = audio_receiver.recv() => {
                 if let Ok(data) = result {
-                    audio_buffer.write(&data);
+                    let mut buffer = audio_buffer.write().unwrap();
+                    buffer.write(&data);
                 }
             }
         }
@@ -70,7 +71,14 @@ fn audio_stream_management_task(app_state: Arc<AppState>) {
                     start_audio_stream(&app_state, tx).await
                 })
         }) {
-            Ok(stream) => stream,
+            Ok((stream, new_sample_rate)) => {
+                let buffer = app_state.audio_buffer.read().unwrap();
+                if new_sample_rate != buffer.sample_rate {
+                    info!("Sample rate changed from {} to {}", buffer.sample_rate, new_sample_rate);
+                    app_state.update_sample_rate(new_sample_rate);
+                }
+                stream
+            },
             Err(e) => {
                 tracing::error!("Failed to start audio stream: {}", e);
                 std::thread::sleep(Duration::from_secs(5));
@@ -96,7 +104,7 @@ fn audio_stream_management_task(app_state: Arc<AppState>) {
 }
 
 #[instrument(skip(app_state, tx))]
-async fn start_audio_stream(app_state: &Arc<AppState>, tx: mpsc::Sender<()>) -> Result<Stream> {
+async fn start_audio_stream(app_state: &Arc<AppState>, tx: mpsc::Sender<()>) -> Result<(Stream, u32)> {
     info!("Starting audio stream");
 
     let (device, config) = CONFIG_MANAGER.get_audio_config().await?;
@@ -122,7 +130,7 @@ async fn start_audio_stream(app_state: &Arc<AppState>, tx: mpsc::Sender<()>) -> 
 
     tracing::info!("Audio stream created with sample rate: {}", config.sample_rate.0);
 
-    Ok(stream)
+    Ok((stream, config.sample_rate.0))
 }
 
 #[allow(dead_code)]
