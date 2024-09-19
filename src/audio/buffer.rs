@@ -40,12 +40,14 @@ impl CircularAudioBuffer {
     }
 
     pub fn read(&self) -> Vec<f32> {
-        let buffer = self.buffer.lock().unwrap();
         let write_pos = self.write_position.load(Ordering::Relaxed);
-
+        
         let mut audio_data = Vec::with_capacity(self.capacity);
-        audio_data.extend_from_slice(&buffer[write_pos..]);
-        audio_data.extend_from_slice(&buffer[..write_pos]);
+        {
+            let buffer = self.buffer.lock().unwrap();
+            audio_data.extend_from_slice(&buffer[write_pos..]);
+            audio_data.extend_from_slice(&buffer[..write_pos]);
+        }
         audio_data
     }
 
@@ -61,20 +63,17 @@ impl CircularAudioBuffer {
             (write_pos + self.capacity - samples_to_return) % self.capacity
         };
 
-        let mut result = Vec::with_capacity(samples_to_return);
-
-        // Minimize the time we hold the lock
+        let mut audio_data = Vec::with_capacity(samples_to_return);
         {
             let buffer = self.buffer.lock().unwrap();
             if start_pos < write_pos {
-                result.extend_from_slice(&buffer[start_pos..write_pos]);
+                audio_data.extend_from_slice(&buffer[start_pos..write_pos]);
             } else {
-                result.extend_from_slice(&buffer[start_pos..]);
-                result.extend_from_slice(&buffer[..write_pos]);
+                audio_data.extend_from_slice(&buffer[start_pos..]);
+                audio_data.extend_from_slice(&buffer[..write_pos]);
             }
         }
-
-        result
+        audio_data
     }
 
     pub fn encode(&self, encoder: &dyn AudioEncoder, duration: Option<Duration>) -> Result<Vec<u8>> {
