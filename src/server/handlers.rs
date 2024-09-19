@@ -7,6 +7,7 @@ use axum::{
     http::{header, StatusCode},
     Json,
 };
+use cpal::traits::{HostTrait, DeviceTrait};
 use serde_json::json;
 use tracing::{info, error};
 use crate::app_state::AppState;
@@ -95,4 +96,34 @@ pub async fn visualize_audio(State(state): State<Arc<AppState>>) -> impl IntoRes
         ],
         image_data,
     )
+}
+
+pub async fn list_audio_devices() -> Json<serde_json::Value> {
+    let host = cpal::default_host();
+    
+    match host.input_devices() {
+        Ok(input_devices) => {
+            let devices: Vec<serde_json::Value> = input_devices
+                .filter_map(|device| {
+                    device.name().ok().map(|name| {
+                        json!({
+                            "name": name,
+                            "id": name, // Using name as ID for simplicity
+                        })
+                    })
+                })
+                .collect();
+
+            Json(json!({
+                "devices": devices
+            }))
+        },
+        Err(e) => {
+            error!("Failed to get input devices: {}", e);
+            Json(json!({
+                "error": "Failed to get input devices",
+                "devices": Vec::<serde_json::Value>::new()
+            }))
+        }
+    }
 }
