@@ -77,13 +77,11 @@ The application uses a flexible configuration system that supports both file-bas
 The default configuration is set in config/default.toml. This file should contain your base configuration:
 
 ```toml
-buffer_duration = 60
+buffer_duration = 120
 
 [server]
 host = "127.0.0.1"
 port = 61429
-# Optional: Set a specific audio device
-# selected_device = "Default"
 ```
 
 To override the default configuration, add a `.toml` file to the `config` directory with your preferred settings. The server will automatically load the configuration from this file.

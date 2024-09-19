@@ -12,7 +12,6 @@ use crate::error::{LifeLoggingError, Result};
 pub struct Config {
     pub buffer_duration: u64,
     pub server: ServerSettings,
-    pub selected_device: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -50,23 +49,16 @@ impl ConfigManager {
     }
 
     pub async fn get_audio_config(&self) -> Result<(cpal::Device, StreamConfig)> {
-        let config = self.config.read().await;
         let host = cpal::default_host();
-        self.find_working_device_and_config(&host, &config).await
+        self.find_working_device_and_config(&host).await
     }
 
-    async fn find_working_device_and_config(&self, host: &cpal::Host, config: &Config) -> Result<(cpal::Device, StreamConfig)> {
+    async fn find_working_device_and_config(&self, host: &cpal::Host) -> Result<(cpal::Device, StreamConfig)> {
         let devices = host.input_devices()?;
 
         for device in devices {
             let name = device.name()?;
             info!("Checking device: {}", name);
-
-            if let Some(ref selected) = config.selected_device {
-                if &name != selected {
-                    continue;
-                }
-            }
 
             match self.find_supported_config(&device).await {
                 Ok(stream_config) => {
