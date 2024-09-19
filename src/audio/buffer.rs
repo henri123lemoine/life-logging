@@ -1,5 +1,3 @@
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 use tracing::info;
 use crate::audio::encoder::AudioEncoder;
@@ -8,48 +6,45 @@ use crate::audio::visualizer::AudioVisualizer;
 use crate::error::Result;
 
 pub struct CircularAudioBuffer {
-    buffer: Arc<Mutex<Vec<f32>>>,
-    write_position: Arc<AtomicUsize>,
-    capacity: usize,
-    sample_rate: u32,
+    pub buffer: Vec<f32>,
+    pub write_position: usize,
+    pub capacity: usize,
+    pub sample_rate: u32,
 }
 
 impl CircularAudioBuffer {
     pub fn new(capacity: usize, sample_rate: u32) -> Self {
         info!("Creating new CircularAudioBuffer with capacity {} and sample rate {}", capacity, sample_rate);
         CircularAudioBuffer {
-            buffer: Arc::new(Mutex::new(vec![0.0; capacity])),
-            write_position: Arc::new(AtomicUsize::new(0)),
+            buffer: vec![0.0; capacity],
+            write_position: 0,
             capacity,
             sample_rate,
         }
     }
 
-    pub fn write(&self, data: &[f32]) {
-        let mut buffer = self.buffer.lock().unwrap();
-        let current_position = self.write_position.load(Ordering::Relaxed);
+    pub fn write(&mut self, data: &[f32]) {
+        let current_position = self.write_position;
         let data_len = data.len();
 
         for (i, &sample) in data.iter().enumerate() {
             let pos = (current_position + i) % self.capacity;
-            buffer[pos] = sample;
+            self.buffer[pos] = sample;
         }
 
         let new_position = (current_position + data_len) % self.capacity;
-        self.write_position.store(new_position, Ordering::Relaxed);
+        self.write_position = new_position;
     }
 
     pub fn read(&self, duration: Option<Duration>) -> Vec<f32> {
-        let write_pos = self.write_position.load(Ordering::Relaxed);
-        
         let (start_pos, samples_to_return) = if let Some(duration) = duration {
             let samples_per_second = self.sample_rate as usize;
             let samples_to_return = (duration.as_secs() as usize * samples_per_second)
                 .min(self.capacity);
             let start_pos = if samples_to_return >= self.capacity {
-                (write_pos + 1) % self.capacity
+                (self.write_position + 1) % self.capacity
             } else {
-                (write_pos + self.capacity - samples_to_return) % self.capacity
+                (self.write_position + self.capacity - samples_to_return) % self.capacity
             };
             (start_pos, samples_to_return)
         } else {
@@ -58,12 +53,11 @@ impl CircularAudioBuffer {
     
         let mut audio_data = Vec::with_capacity(samples_to_return);
         {
-            let buffer = self.buffer.lock().unwrap();
-            if start_pos <= write_pos {
-                audio_data.extend_from_slice(&buffer[start_pos..write_pos]);
+            if start_pos <= self.write_position {
+                audio_data.extend_from_slice(&self.buffer[start_pos..self.write_position]);
             } else {
-                audio_data.extend_from_slice(&buffer[start_pos..]);
-                audio_data.extend_from_slice(&buffer[..write_pos]);
+                audio_data.extend_from_slice(&self.buffer[start_pos..]);
+                audio_data.extend_from_slice(&self.buffer[..self.write_position]);
             }
         }
         audio_data
@@ -80,21 +74,20 @@ impl CircularAudioBuffer {
         AudioVisualizer::create_waveform(&audio_data, width, height)
     }
 
-    pub fn sample_rate(&self) -> u32 {
-        self.sample_rate
-    }
-
-    pub fn len(&self) -> usize {
-        self.capacity
-    }
-
+    #[allow(dead_code)]
     pub fn detect_silence(&self, threshold: f32) -> Vec<(usize, usize)> {
         let data = self.read(None);
         processor::detect_silence(&data, threshold)
     }
 
+    #[allow(dead_code)]
     pub fn compute_spectrum(&self) -> Vec<f32> {
         let data = self.read(None);
         processor::compute_spectrum(&data)
+    }
+
+    #[allow(dead_code)]
+    pub fn len(&self) -> usize {
+        self.capacity
     }
 }
