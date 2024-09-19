@@ -97,40 +97,4 @@ impl CircularAudioBuffer {
         let data = self.read(None);
         processor::compute_spectrum(&data)
     }
-
-    pub fn update_sample_rate(&mut self, new_sample_rate: u32) {
-        if self.sample_rate == new_sample_rate {
-            return;
-        }
-    
-        let old_data = self.read(None);
-        let old_duration = old_data.len() as f32 / self.sample_rate as f32;
-    
-        self.sample_rate = new_sample_rate;
-        let new_capacity = (old_duration * new_sample_rate as f32).ceil() as usize;
-    
-        let mut new_buffer = vec![0.0; new_capacity];
-        let mut new_write_position = 0;
-    
-        // Simple linear interpolation for resampling
-        for i in 0..new_capacity {
-            let old_index = i as f32 * old_data.len() as f32 / new_capacity as f32;
-            let old_index_floor = old_index.floor() as usize;
-            let old_index_ceil = old_index.ceil() as usize;
-            let frac = old_index - old_index.floor();
-    
-            if old_index_ceil < old_data.len() {
-                new_buffer[i] = old_data[old_index_floor] * (1.0 - frac) + old_data[old_index_ceil] * frac;
-            } else {
-                new_buffer[i] = old_data[old_index_floor];
-            }
-            new_write_position = i + 1;
-        }
-    
-        *self.buffer.lock().unwrap() = new_buffer;
-        self.write_position.store(new_write_position % new_capacity, Ordering::Relaxed);
-        self.capacity = new_capacity;
-    
-        info!("Updated sample rate to {} Hz, new capacity: {} samples", new_sample_rate, new_capacity);
-    }
 }
