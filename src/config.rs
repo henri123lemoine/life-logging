@@ -27,7 +27,6 @@ pub static CONFIG_MANAGER: Lazy<ConfigManager> = Lazy::new(|| {
 
 pub struct ConfigManager {
     config: Arc<RwLock<Config>>,
-    config_source: ConfigSource,
 }
 
 impl ConfigManager {
@@ -43,7 +42,6 @@ impl ConfigManager {
 
         Ok(Self {
             config: Arc::new(RwLock::new(config)),
-            config_source,
         })
     }
 
