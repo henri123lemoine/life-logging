@@ -44,13 +44,7 @@ pub async fn get_audio(
 }
 
 async fn encode_and_respond(state: Arc<AppState>, encoder: &dyn AudioEncoder, duration: Option<Duration>) -> Response {
-    let audio_data = match duration {
-        Some(dur) => state.audio_buffer.get_last_n_seconds(dur),
-        None => state.audio_buffer.read(),
-    };
-    let sample_rate = state.audio_buffer.sample_rate();
-
-    match encoder.encode(&audio_data, sample_rate) {
+    match state.audio_buffer.encode(encoder, duration) {
         Ok(encoded_data) => successful_encoding_response(encoder, encoded_data),
         Err(e) => encoding_error_response(e),
     }

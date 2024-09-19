@@ -77,8 +77,14 @@ impl CircularAudioBuffer {
         result
     }
 
-    pub fn sample_rate(&self) -> u32 {
-        self.sample_rate
+    pub fn encode(&self, encoder: &dyn AudioEncoder, duration: Option<Duration>) -> Result<Vec<u8>> {
+        let audio_data = match duration {
+            Some(dur) => self.get_last_n_seconds(dur),
+            None => self.read(),
+        };
+    
+        info!("Encoding {} samples of audio data", audio_data.len());
+        encoder.encode(&audio_data, self.sample_rate)
     }
 
     pub fn visualize(&self, width: u32, height: u32) -> Vec<u8> {
@@ -88,23 +94,13 @@ impl CircularAudioBuffer {
     }
 
     #[allow(dead_code)]
-    pub fn encode(&self, encoder: &dyn AudioEncoder) -> Result<Vec<u8>> {
-        let audio_data = self.read();
-        info!("Encoding {} samples of audio data", audio_data.len());
-        encoder.encode(&audio_data, self.sample_rate)
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
     }
 
     #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.capacity
-    }
-
-    #[allow(dead_code)]
-    pub fn normalize_volume(&mut self, target_peak: f32) -> Result<()> {
-        let mut data = self.read();
-        processor::normalize_volume(&mut data, target_peak)?;
-        self.write(&data);
-        Ok(())
     }
 
     #[allow(dead_code)]

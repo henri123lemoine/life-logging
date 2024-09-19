@@ -125,6 +125,7 @@ async fn start_audio_stream(app_state: &Arc<AppState>, tx: mpsc::Sender<()>) -> 
     Ok(stream)
 }
 
+#[allow(dead_code)]
 pub fn normalize_volume(data: &mut [f32], target_peak: f32) -> Result<()> {
     if data.is_empty() {
         return Ok(());
@@ -145,6 +146,7 @@ pub fn normalize_volume(data: &mut [f32], target_peak: f32) -> Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
 pub fn detect_silence(data: &[f32], threshold: f32) -> Vec<(usize, usize)> {
     let mut silence_ranges = Vec::new();
     let mut silence_start: Option<usize> = None;
@@ -167,6 +169,7 @@ pub fn detect_silence(data: &[f32], threshold: f32) -> Vec<(usize, usize)> {
     silence_ranges
 }
 
+#[allow(dead_code)]
 pub fn compute_spectrum(data: &[f32]) -> Vec<f32> {
     let mut planner = FftPlanner::new();
     let fft = planner.plan_fft_forward(data.len());
