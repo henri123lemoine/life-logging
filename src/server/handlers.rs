@@ -8,6 +8,7 @@ use axum::{
     Json,
 };
 use cpal::traits::{HostTrait, DeviceTrait};
+use serde::Deserialize;
 use serde_json::json;
 use tracing::{info, error};
 use crate::app_state::AppState;
@@ -125,5 +126,26 @@ pub async fn list_audio_devices() -> Json<serde_json::Value> {
                 "devices": Vec::<serde_json::Value>::new()
             }))
         }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ChangeDeviceRequest {
+    device_id: String,
+}
+
+pub async fn change_audio_device(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<ChangeDeviceRequest>,
+) -> Json<serde_json::Value> {
+    match state.change_audio_device(payload.device_id).await {
+        Ok(()) => Json(json!({
+            "status": "success",
+            "message": "Audio device changed successfully"
+        })),
+        Err(e) => Json(json!({
+            "status": "error",
+            "message": format!("Failed to change audio device: {}", e)
+        })),
     }
 }

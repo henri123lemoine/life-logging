@@ -1,6 +1,6 @@
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, mpsc};
 use tracing::info;
 use crate::audio::buffer::CircularAudioBuffer;
 use crate::config::CONFIG_MANAGER;
@@ -59,6 +59,19 @@ impl AppState {
 
         info!("Updated sample rate to {} Hz, new capacity: {} samples", new_sample_rate, new_capacity);
 
+        Ok(())
+    }
+
+    pub async fn change_audio_device(&self, device_id: String) -> Result<()> {
+        let (tx, mut rx) = mpsc::channel(1);
+        self.audio_sender.send(vec![]).map_err(|e| LifeLoggingError::AudioDeviceError(format!("Failed to send stop signal: {}", e)))?;
+        
+        // Send the new device ID to the audio processing task
+        tx.send(device_id).await.map_err(|e| LifeLoggingError::AudioDeviceError(format!("Failed to send new device ID: {}", e)))?;
+        
+        // Wait for confirmation from the audio processing task
+        rx.recv().await.ok_or_else(|| LifeLoggingError::AudioDeviceError("Failed to receive confirmation".to_string()))?;
+        
         Ok(())
     }
 }

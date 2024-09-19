@@ -5,11 +5,11 @@ use rustfft::{FftPlanner, num_complex::Complex};
 use std::time::Duration;
 use tokio::task;
 use tokio::sync::{broadcast, mpsc};
-use tracing::{info, warn, instrument};
+use tracing::{error, info, warn, instrument};
 use crate::app_state::AppState;
 use crate::audio::buffer::CircularAudioBuffer;
 use crate::config::CONFIG_MANAGER;
-use crate::error::Result;
+use crate::error::{LifeLoggingError, Result};
 
 #[instrument(skip(app_state))]
 pub async fn setup_audio_processing(app_state: &Arc<AppState>) -> Result<()> {
@@ -62,13 +62,14 @@ async fn audio_processing_task(
 fn audio_stream_management_task(app_state: Arc<AppState>) {
     info!("Starting audio stream management task");
 
+    let (tx, mut rx) = mpsc::channel::<String>(1);
+
     loop {
-        let (tx, mut rx) = mpsc::channel::<()>(1);
         let stream = match task::block_in_place(|| {
             tokio::runtime::Runtime::new()
                 .unwrap()
                 .block_on(async {
-                    start_audio_stream(&app_state, tx).await
+                    start_audio_stream(&app_state, tx.clone()).await
                 })
         }) {
             Ok((stream, new_sample_rate)) => {
@@ -105,16 +106,35 @@ fn audio_stream_management_task(app_state: Arc<AppState>) {
             continue;
         }
 
-        // Wait for the stream to end or for an error
-        rx.blocking_recv();
+        // Wait for a stop signal or a new device ID
+        match rx.blocking_recv() {
+            Some(new_device_id) => {
+                info!("Changing audio device to: {}", new_device_id);
+                // Update the selected device in the config
+                if let Err(e) = task::block_in_place(|| {
+                    tokio::runtime::Runtime::new()
+                        .unwrap()
+                        .block_on(async {
+                            let config = CONFIG_MANAGER.get_config().await;
+                            let mut config = config.write().await;
+                            config.selected_device = Some(new_device_id);
+                            Ok::<_, LifeLoggingError>(())
+                        })
+                }) {
+                    error!("Failed to update config: {}", e);
+                }
+            }
+            None => {
+                warn!("Audio stream ended, attempting to restart");
+            }
+        }
 
-        tracing::warn!("Audio stream ended, attempting to restart");
         std::thread::sleep(Duration::from_secs(1));
     }
 }
 
 #[instrument(skip(app_state, tx))]
-async fn start_audio_stream(app_state: &Arc<AppState>, tx: mpsc::Sender<()>) -> Result<(Stream, u32)> {
+async fn start_audio_stream(app_state: &Arc<AppState>, tx: mpsc::Sender<String>) -> Result<(Stream, u32)> {
     info!("Starting audio stream");
 
     let (device, config) = CONFIG_MANAGER.get_audio_config().await?;
@@ -128,12 +148,12 @@ async fn start_audio_stream(app_state: &Arc<AppState>, tx: mpsc::Sender<()>) -> 
         move |data: &[f32], _: &cpal::InputCallbackInfo| {
             if let Err(e) = audio_sender.send(data.to_vec()) {
                 tracing::warn!("Failed to send audio data: {}", e);
-                let _ = tx1.try_send(());  // Notify that the stream has ended
+                let _ = tx1.try_send("".to_string());
             }
         },
         move |err| {
             tracing::error!("An error occurred on stream: {}", err);
-            let _ = tx2.try_send(());  // Notify that the stream has ended
+            let _ = tx2.try_send("".to_string());
         },
         Some(Duration::from_secs(2))
     )?;
