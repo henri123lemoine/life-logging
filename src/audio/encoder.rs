@@ -1,12 +1,11 @@
 use once_cell::sync::Lazy;
-use tracing::info;
-use std::process::Command;
-use std::io::Write;
-use tempfile::NamedTempFile;
 use opus::{Channels, Application, Bitrate};
-use crate::error::{LifeLoggingError, Result};
-
 use std::collections::HashMap;
+use std::io::Write;
+use std::process::Command;
+use tempfile::NamedTempFile;
+use tracing::info;
+use crate::error::{LifeLoggingError, Result};
 
 pub trait AudioEncoder: Send + Sync {
     fn encode(&self, data: &[f32], sample_rate: u32) -> Result<Vec<u8>>;
