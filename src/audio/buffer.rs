@@ -40,35 +40,23 @@ impl CircularAudioBuffer {
     }
 
     pub fn read(&self, duration: Option<Duration>) -> Vec<f32> {
-        // Check if the buffer is in a consistent state
-        // TODO: Remove this check in release builds
-        if !self.is_consistent {
-            panic!("CircularAudioBuffer is in an inconsistent state");
-        }
-
-        let (start_pos, samples_to_return) = if let Some(duration) = duration {
-            let samples_per_second = self.sample_rate as usize;
-            let samples_to_return = (duration.as_secs() as usize * samples_per_second)
-                .min(self.capacity);
-            let start_pos = if samples_to_return >= self.capacity {
-                (self.write_position + 1) % self.capacity
-            } else {
-                (self.write_position + self.capacity - samples_to_return) % self.capacity
-            };
-            (start_pos, samples_to_return)
+        let samples_to_return = if let Some(duration) = duration {
+            (duration.as_secs_f32() * self.sample_rate as f32) as usize
         } else {
-            (0, self.capacity)
-        };
+            self.capacity
+        }.min(self.capacity);
     
         let mut audio_data = Vec::with_capacity(samples_to_return);
-        {
-            if start_pos <= self.write_position {
-                audio_data.extend_from_slice(&self.buffer[start_pos..self.write_position]);
-            } else {
-                audio_data.extend_from_slice(&self.buffer[start_pos..]);
-                audio_data.extend_from_slice(&self.buffer[..self.write_position]);
-            }
+        let start_pos = (self.write_position + self.capacity - samples_to_return) % self.capacity;
+    
+        if start_pos + samples_to_return <= self.capacity {
+            audio_data.extend_from_slice(&self.buffer[start_pos..start_pos + samples_to_return]);
+        } else {
+            let first_part = self.capacity - start_pos;
+            audio_data.extend_from_slice(&self.buffer[start_pos..]);
+            audio_data.extend_from_slice(&self.buffer[..samples_to_return - first_part]);
         }
+    
         audio_data
     }
 
