@@ -4,7 +4,7 @@ use tokio::sync::broadcast;
 use tracing::info;
 use crate::audio::buffer::CircularAudioBuffer;
 use crate::config::CONFIG_MANAGER;
-use crate::error::Result;
+use crate::error::{LifeLoggingError, Result};
 
 pub struct AppState {
     pub audio_buffer: Arc<RwLock<CircularAudioBuffer>>,
@@ -27,13 +27,13 @@ impl AppState {
         Ok(app_state)
     }
 
-    pub fn update_sample_rate(&self, new_sample_rate: u32) {
-        let mut audio_buffer = self.audio_buffer.write().unwrap();
+    pub fn update_sample_rate(&self, new_sample_rate: u32) -> Result<()> {
+        let mut audio_buffer = self.audio_buffer.write().map_err(|_| LifeLoggingError::AudioDeviceError("Failed to acquire write lock on audio buffer".to_string()))?;
         let old_sample_rate = audio_buffer.sample_rate;
         let old_capacity = audio_buffer.capacity;
 
         if old_sample_rate == new_sample_rate {
-            return;
+            return Ok(());
         }
 
         let new_capacity = (old_capacity as f32 * new_sample_rate as f32 / old_sample_rate as f32).ceil() as usize;
@@ -58,5 +58,7 @@ impl AppState {
         audio_buffer.sample_rate = new_sample_rate;
 
         info!("Updated sample rate to {} Hz, new capacity: {} samples", new_sample_rate, new_capacity);
+
+        Ok(())
     }
 }
