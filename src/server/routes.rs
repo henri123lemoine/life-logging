@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use axum::{
-    routing::{get, post},
+    routing::get,
     Router,
 };
 use super::handlers;
@@ -12,6 +12,5 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         .route("/health", get(handlers::health_check))
         .route("/get_audio", get(handlers::get_audio))
         .route("/visualize_audio", get(handlers::visualize_audio))
-        .route("/reload_config", post(handlers::reload_config))
         .with_state(app_state)
 }

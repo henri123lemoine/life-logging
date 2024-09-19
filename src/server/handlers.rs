@@ -97,30 +97,3 @@ pub async fn visualize_audio(State(state): State<Arc<AppState>>) -> impl IntoRes
         image_data,
     )
 }
-
-pub async fn reload_config() -> impl IntoResponse {
-    let reload_span = info_span!("config_reload");
-
-    async {
-        info!("Configuration reload initiated");
-
-        match CONFIG_MANAGER.reload().await {
-            Ok(_) => {
-                info!("Configuration reloaded successfully");
-                let response = serde_json::json!({
-                    "status": "ok",
-                    "message": "Configuration reloaded successfully"
-                });
-                (StatusCode::OK, Json(response))
-            },
-            Err(e) => {
-                error!(error = %e, "Failed to reload configuration");
-                let response = serde_json::json!({
-                    "status": "error",
-                    "message": format!("Failed to reload configuration: {}", e)
-                });
-                (StatusCode::INTERNAL_SERVER_ERROR, Json(response))
-            }
-        }
-    }.instrument(reload_span).await
-}

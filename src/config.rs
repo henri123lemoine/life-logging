@@ -48,14 +48,6 @@ impl ConfigManager {
         })
     }
 
-    pub async fn reload(&self) -> Result<()> {
-        let new_config = self.config_source.clone().try_deserialize()?;
-        let mut config = self.config.write().await;
-        *config = new_config;
-        info!("Configuration reloaded successfully");
-        Ok(())
-    }
-
     pub async fn get_config(&self) -> Arc<RwLock<Config>> {
         self.config.clone()
     }

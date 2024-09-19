@@ -103,14 +103,6 @@ For example:
 
 Set the `RUST_LOG` environment variable to `info` or `debug` to see more detailed logs. Valid log levels are: error, warn, info, debug, trace.
 
-### Configuration Reloading
-
-The application supports hot-reloading of the configuration. You can trigger a configuration reload by sending a POST request to the /reload_config endpoint:
-```bash
-curl -X POST http://127.0.0.1:61429/reload_config
-```
-This will re-read the configuration file and apply any changes made to it or to the environment variables.
-
 ## Security Considerations
 
 This project involves continuous audio recording, which has significant privacy implications. Please ensure you:
