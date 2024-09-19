@@ -13,7 +13,6 @@ pub struct Config {
     pub buffer_duration: u64,
     pub server: ServerSettings,
     pub selected_device: Option<String>,
-    pub audio_channel_buffer_size: Option<usize>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

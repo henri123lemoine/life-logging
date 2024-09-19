@@ -8,10 +8,9 @@ use axum::{
     Json,
 };
 use serde_json::json;
-use tracing::{info_span, info, error, Instrument};
+use tracing::{info, error};
 use crate::app_state::AppState;
 use crate::audio::encoder::{AudioEncoder, ENCODER_FACTORY};
-use crate::config::CONFIG_MANAGER;
 use crate::error::LifeLoggingError;
 
 pub async fn health_check(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
