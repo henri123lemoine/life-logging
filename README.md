@@ -58,6 +58,9 @@ The server will start on `http://127.0.0.1:61429`, or whichever port is chosen i
   - `duration`: The duration of audio to return, in seconds. Default is the entire buffer.
 - **Visualize Audio**: `GET /visualize_audio` - Returns a PNG image visualizing the recent audio data. Useful for debugging.
 - **Health Check**: `GET /health` - Returns the server's health status.
+- **List Devices**: `GET /list_devices` - Returns a list of available audio devices.
+- **Change Device**: `POST /change_device` - Changes the selected audio device. Body parameters:
+  - `device_id`: The ID of the audio device to select.
 
 ### Examples
 
@@ -67,6 +70,25 @@ curl "http://127.0.0.1:61429/get_audio?format=wav" --output recent_audio.wav
 ```
 
 Visualize recent audio data: Go to `http://127.0.0.1:61429/visualize_audio` in your browser.
+
+List available audio devices:
+```bash
+curl http://localhost:61429/list_devices
+```
+```json
+{"devices":[{"id":"MacBook Pro Microphone","name":"MacBook Pro Microphone"},{"id":"Microsoft Teams Audio","name":"Microsoft Teams Audio"}]}
+```
+
+Change the selected audio device:
+```bash
+curl -X POST http://localhost:61429/change_device \
+     -H "Content-Type: application/json" \
+     -d '{"device_id": "Henri’s AirPods Pro"}'
+```
+```json
+{"message":"Audio device changed successfully","status":"success"}
+```
+Note: This feature is not yet fully tested.
 
 ### Configuration
 
@@ -116,6 +138,7 @@ This project involves continuous audio recording, which has significant privacy 
 
 - [ ] Long-term audio persistence with s3
   - [ ] Efficient compression with Opus at 32kbps and silence removal
+- [ ] Verify that device changing works
 - [ ] Transcription with whisperx
 - [ ] Audio analysis (e.g., live note detection)
 - [ ] Websocket support for real-time audio streaming
