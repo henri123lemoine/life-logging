@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::process::Command;
 use tempfile::NamedTempFile;
-use tracing::info;
+use tracing::{info, error};
 use crate::error::{LifeLoggingError, Result};
 
 pub trait AudioEncoder: Send + Sync {
@@ -101,10 +101,15 @@ impl AudioEncoder for FlacEncoder {
             .arg("--stdout")
             .arg(temp_wav.path())
             .output()
-            .map_err(|e| LifeLoggingError::EncodingError(format!("Failed to execute FLAC encoder: {}", e)))?;
+            .map_err(|e| {
+                error!("Failed to execute FLAC encoder: {}", e);
+                LifeLoggingError::EncodingError(format!("Failed to execute FLAC encoder: {}", e))
+            })?;
 
         if !output.status.success() {
-            return Err(LifeLoggingError::EncodingError(format!("FLAC encoding failed: {}", String::from_utf8_lossy(&output.stderr))));
+            let error_message = String::from_utf8_lossy(&output.stderr);
+            error!("FLAC encoding failed: {}", error_message);
+            return Err(LifeLoggingError::EncodingError(format!("FLAC encoding failed: {}", error_message)));
         }
 
         info!("Encoded {} samples into {} bytes of FLAC data", data.len(), output.stdout.len());
