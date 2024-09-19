@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 use tracing::info;
 use crate::audio::encoder::AudioEncoder;
 use crate::audio::processor;
@@ -48,6 +49,34 @@ impl CircularAudioBuffer {
         audio_data
     }
 
+    pub fn get_last_n_seconds(&self, duration: Duration) -> Vec<f32> {
+        let samples_per_second = self.sample_rate as usize;
+        let samples_to_return = (duration.as_secs() as usize * samples_per_second)
+            .min(self.capacity);
+    
+        let write_pos = self.write_position.load(std::sync::atomic::Ordering::Relaxed);
+        let start_pos = if samples_to_return >= self.capacity {
+            (write_pos + 1) % self.capacity
+        } else {
+            (write_pos + self.capacity - samples_to_return) % self.capacity
+        };
+    
+        let mut result = Vec::with_capacity(samples_to_return);
+    
+        // Minimize the time we hold the lock
+        {
+            let buffer = self.buffer.lock().unwrap();
+            if start_pos < write_pos {
+                result.extend_from_slice(&buffer[start_pos..write_pos]);
+            } else {
+                result.extend_from_slice(&buffer[start_pos..]);
+                result.extend_from_slice(&buffer[..write_pos]);
+            }
+        }
+    
+        result
+    }
+    
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
     }
