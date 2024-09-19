@@ -1,7 +1,7 @@
+use std::sync::{Arc, Mutex};
 use cpal::Stream;
 use cpal::traits::{DeviceTrait, StreamTrait};
 use rustfft::{FftPlanner, num_complex::Complex};
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::task;
 use tokio::sync::{broadcast, mpsc};

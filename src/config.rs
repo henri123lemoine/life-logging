@@ -1,6 +1,6 @@
+use std::sync::Arc;
 use config::{Config as ConfigSource, Environment, File};
 use serde::Deserialize;
-use std::sync::Arc;
 use tokio::sync::RwLock;
 use once_cell::sync::Lazy;
 use cpal::traits::{DeviceTrait, HostTrait};
