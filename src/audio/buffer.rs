@@ -54,7 +54,7 @@ impl CircularAudioBuffer {
         let samples_to_return = (duration.as_secs() as usize * samples_per_second)
             .min(self.capacity);
 
-        let write_pos = self.write_position.load(std::sync::atomic::Ordering::Relaxed);
+        let write_pos = self.write_position.load(Ordering::Relaxed);
         let start_pos = if samples_to_return >= self.capacity {
             (write_pos + 1) % self.capacity
         } else {
@@ -93,25 +93,57 @@ impl CircularAudioBuffer {
         AudioVisualizer::create_waveform(&audio_data, width, height)
     }
 
-    #[allow(dead_code)]
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
     }
 
-    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.capacity
     }
 
-    #[allow(dead_code)]
     pub fn detect_silence(&self, threshold: f32) -> Vec<(usize, usize)> {
         let data = self.read();
         processor::detect_silence(&data, threshold)
     }
 
-    #[allow(dead_code)]
     pub fn compute_spectrum(&self) -> Vec<f32> {
         let data = self.read();
         processor::compute_spectrum(&data)
+    }
+
+    pub fn update_sample_rate(&mut self, new_sample_rate: u32) {
+        if self.sample_rate == new_sample_rate {
+            return;
+        }
+    
+        let old_data = self.read();
+        let old_duration = old_data.len() as f32 / self.sample_rate as f32;
+    
+        self.sample_rate = new_sample_rate;
+        let new_capacity = (old_duration * new_sample_rate as f32).ceil() as usize;
+    
+        let mut new_buffer = vec![0.0; new_capacity];
+        let mut new_write_position = 0;
+    
+        // Simple linear interpolation for resampling
+        for i in 0..new_capacity {
+            let old_index = i as f32 * old_data.len() as f32 / new_capacity as f32;
+            let old_index_floor = old_index.floor() as usize;
+            let old_index_ceil = old_index.ceil() as usize;
+            let frac = old_index - old_index.floor();
+    
+            if old_index_ceil < old_data.len() {
+                new_buffer[i] = old_data[old_index_floor] * (1.0 - frac) + old_data[old_index_ceil] * frac;
+            } else {
+                new_buffer[i] = old_data[old_index_floor];
+            }
+            new_write_position = i + 1;
+        }
+    
+        *self.buffer.lock().unwrap() = new_buffer;
+        self.write_position.store(new_write_position % new_capacity, Ordering::Relaxed);
+        self.capacity = new_capacity;
+    
+        info!("Updated sample rate to {} Hz, new capacity: {} samples", new_sample_rate, new_capacity);
     }
 }
