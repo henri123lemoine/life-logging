@@ -76,9 +76,16 @@ fn audio_stream_management_task(app_state: Arc<AppState>) {
                 if new_sample_rate != buffer.sample_rate {
                     info!("Sample rate changed from {} to {}", buffer.sample_rate, new_sample_rate);
                     buffer.is_consistent = false;
-                    drop(buffer); // Release the write lock
-                    app_state.update_sample_rate(new_sample_rate);
-                    app_state.audio_buffer.write().unwrap().is_consistent = true;
+                    drop(buffer);
+                    match app_state.update_sample_rate(new_sample_rate) {
+                        Ok(()) => {
+                            app_state.audio_buffer.write().unwrap().is_consistent = true;
+                        }
+                        Err(e) => {
+                            warn!("Failed to update sample rate: {}", e);
+                            continue;
+                        }
+                    }
                 }
                 stream
             },
