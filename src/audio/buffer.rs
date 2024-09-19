@@ -39,34 +39,27 @@ impl CircularAudioBuffer {
         self.write_position.store(new_position, Ordering::Relaxed);
     }
 
-    pub fn read(&self) -> Vec<f32> {
+    pub fn read(&self, duration: Option<Duration>) -> Vec<f32> {
         let write_pos = self.write_position.load(Ordering::Relaxed);
         
-        let mut audio_data = Vec::with_capacity(self.capacity);
-        {
-            let buffer = self.buffer.lock().unwrap();
-            audio_data.extend_from_slice(&buffer[write_pos..]);
-            audio_data.extend_from_slice(&buffer[..write_pos]);
-        }
-        audio_data
-    }
-
-    pub fn get_last_n_seconds(&self, duration: Duration) -> Vec<f32> {
-        let samples_per_second = self.sample_rate as usize;
-        let samples_to_return = (duration.as_secs() as usize * samples_per_second)
-            .min(self.capacity);
-
-        let write_pos = self.write_position.load(Ordering::Relaxed);
-        let start_pos = if samples_to_return >= self.capacity {
-            (write_pos + 1) % self.capacity
+        let (start_pos, samples_to_return) = if let Some(duration) = duration {
+            let samples_per_second = self.sample_rate as usize;
+            let samples_to_return = (duration.as_secs() as usize * samples_per_second)
+                .min(self.capacity);
+            let start_pos = if samples_to_return >= self.capacity {
+                (write_pos + 1) % self.capacity
+            } else {
+                (write_pos + self.capacity - samples_to_return) % self.capacity
+            };
+            (start_pos, samples_to_return)
         } else {
-            (write_pos + self.capacity - samples_to_return) % self.capacity
+            (0, self.capacity)
         };
-
+    
         let mut audio_data = Vec::with_capacity(samples_to_return);
         {
             let buffer = self.buffer.lock().unwrap();
-            if start_pos < write_pos {
+            if start_pos <= write_pos {
                 audio_data.extend_from_slice(&buffer[start_pos..write_pos]);
             } else {
                 audio_data.extend_from_slice(&buffer[start_pos..]);
@@ -77,17 +70,12 @@ impl CircularAudioBuffer {
     }
 
     pub fn encode(&self, encoder: &dyn AudioEncoder, duration: Option<Duration>) -> Result<Vec<u8>> {
-        let audio_data = match duration {
-            Some(dur) => self.get_last_n_seconds(dur),
-            None => self.read(),
-        };
-    
-        info!("Encoding {} samples of audio data", audio_data.len());
+        let audio_data = self.read(duration);
         encoder.encode(&audio_data, self.sample_rate)
     }
 
     pub fn visualize(&self, width: u32, height: u32) -> Vec<u8> {
-        let audio_data = self.read();
+        let audio_data = self.read(None);
         info!("Generating waveform visualization with dimensions {}x{}", width, height);
         AudioVisualizer::create_waveform(&audio_data, width, height)
     }
@@ -101,12 +89,12 @@ impl CircularAudioBuffer {
     }
 
     pub fn detect_silence(&self, threshold: f32) -> Vec<(usize, usize)> {
-        let data = self.read();
+        let data = self.read(None);
         processor::detect_silence(&data, threshold)
     }
 
     pub fn compute_spectrum(&self) -> Vec<f32> {
-        let data = self.read();
+        let data = self.read(None);
         processor::compute_spectrum(&data)
     }
 
@@ -115,7 +103,7 @@ impl CircularAudioBuffer {
             return;
         }
     
-        let old_data = self.read();
+        let old_data = self.read(None);
         let old_duration = old_data.len() as f32 / self.sample_rate as f32;
     
         self.sample_rate = new_sample_rate;
