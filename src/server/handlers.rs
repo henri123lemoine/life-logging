@@ -5,8 +5,9 @@ use axum::{
     Json,
 };
 use serde_json::json;
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
 use tracing::{info_span, info, error, Instrument};
 use crate::app_state::AppState;
 use crate::audio::encoder::{AudioEncoder, ENCODER_FACTORY};
@@ -31,17 +32,24 @@ pub async fn get_audio(
     let format = params.get("format")
         .map(|s| s.to_lowercase())
         .unwrap_or_else(|| "wav".to_string());
-    
+
+    let duration = params.get("duration")
+        .and_then(|d| d.parse::<f32>().ok())
+        .map(|secs| Duration::from_secs_f32(secs));
+
     match ENCODER_FACTORY.get_encoder(&format) {
-        Some(encoder) => encode_and_respond(state, encoder.as_ref()).await,
+        Some(encoder) => encode_and_respond(state, encoder.as_ref(), duration).await,
         None => unsupported_format_response(),
     }
 }
 
-async fn encode_and_respond(state: Arc<AppState>, encoder: &dyn AudioEncoder) -> Response {
-    let audio_data = state.audio_buffer.read();
+async fn encode_and_respond(state: Arc<AppState>, encoder: &dyn AudioEncoder, duration: Option<Duration>) -> Response {
+    let audio_data = match duration {
+        Some(dur) => state.audio_buffer.get_last_n_seconds(dur),
+        None => state.audio_buffer.read(),
+    };
     let sample_rate = state.audio_buffer.sample_rate();
-    
+
     match encoder.encode(&audio_data, sample_rate) {
         Ok(encoded_data) => successful_encoding_response(encoder, encoded_data),
         Err(e) => encoding_error_response(e),
