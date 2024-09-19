@@ -89,7 +89,7 @@ fn audio_stream_management_task(app_state: Arc<AppState>) {
 
         // Wait for the stream to end or for an error
         rx.blocking_recv();
-        
+
         tracing::warn!("Audio stream ended, attempting to restart");
         std::thread::sleep(Duration::from_secs(1));
     }
@@ -131,7 +131,7 @@ pub fn normalize_volume(data: &mut [f32], target_peak: f32) -> Result<()> {
     }
 
     let max_amplitude = data.iter().map(|&x| x.abs()).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
-    
+
     if max_amplitude == 0.0 {
         return Ok(());
     }

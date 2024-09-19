@@ -12,7 +12,7 @@ impl AudioVisualizer {
                 &mut buffer,
                 (width, height)
             ).unwrap().into_drawing_area();
-            
+
             root.fill(&WHITE).unwrap();
 
             let mut chart = ChartBuilder::on(&root)

@@ -93,7 +93,7 @@ impl AudioEncoder for FlacEncoder {
         let wav_encoder = WavEncoder;
         let wav_data = wav_encoder.encode(data, sample_rate)?;
         temp_wav.as_file().write_all(&wav_data).map_err(|e| LifeLoggingError::EncodingError(e.to_string()))?;
-        
+
         // Use external FLAC encoder
         let output = Command::new("flac")
             .arg("--silent")
@@ -137,7 +137,7 @@ impl AudioEncoder for OpusEncoder {
 
         // Opus works with 20ms frames, so we need to calculate the frame size
         let frame_size = (sample_rate as usize / 1000) * 20;
-        
+
         // Prepare the output buffer
         // The maximum size of an Opus packet for this configuration
         let max_packet_size = 1275; // This is the maximum for 48kHz stereo
@@ -148,7 +148,7 @@ impl AudioEncoder for OpusEncoder {
             let mut packet = vec![0u8; max_packet_size];
             let packet_len = encoder.encode_float(chunk, &mut packet)
                 .map_err(|e| LifeLoggingError::EncodingError(format!("Failed to encode Opus frame: {}", e)))?;
-            
+
             output.extend_from_slice(&(packet_len as u32).to_le_bytes());
             output.extend_from_slice(&packet[..packet_len]);
         }

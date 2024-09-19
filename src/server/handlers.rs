@@ -104,10 +104,10 @@ pub async fn visualize_audio(State(state): State<Arc<AppState>>) -> impl IntoRes
 
 pub async fn reload_config() -> impl IntoResponse {
     let reload_span = info_span!("config_reload");
-    
+
     async {
         info!("Configuration reload initiated");
-        
+
         match CONFIG_MANAGER.reload().await {
             Ok(_) => {
                 info!("Configuration reloaded successfully");

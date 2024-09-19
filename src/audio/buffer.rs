@@ -34,7 +34,7 @@ impl CircularAudioBuffer {
             let pos = (current_position + i) % self.capacity;
             buffer[pos] = sample;
         }
-        
+
         let new_position = (current_position + data_len) % self.capacity;
         self.write_position.store(new_position, Ordering::Relaxed);
     }
@@ -53,16 +53,16 @@ impl CircularAudioBuffer {
         let samples_per_second = self.sample_rate as usize;
         let samples_to_return = (duration.as_secs() as usize * samples_per_second)
             .min(self.capacity);
-    
+
         let write_pos = self.write_position.load(std::sync::atomic::Ordering::Relaxed);
         let start_pos = if samples_to_return >= self.capacity {
             (write_pos + 1) % self.capacity
         } else {
             (write_pos + self.capacity - samples_to_return) % self.capacity
         };
-    
+
         let mut result = Vec::with_capacity(samples_to_return);
-    
+
         // Minimize the time we hold the lock
         {
             let buffer = self.buffer.lock().unwrap();
@@ -73,10 +73,10 @@ impl CircularAudioBuffer {
                 result.extend_from_slice(&buffer[..write_pos]);
             }
         }
-    
+
         result
     }
-    
+
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
     }

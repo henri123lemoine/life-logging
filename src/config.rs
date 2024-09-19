@@ -41,7 +41,7 @@ impl ConfigManager {
             .build()?;
 
         let config = config_source.clone().try_deserialize()?;
-        
+
         Ok(Self {
             config: Arc::new(RwLock::new(config)),
             config_source,
@@ -72,7 +72,7 @@ impl ConfigManager {
         for device in devices {
             let name = device.name()?;
             info!("Checking device: {}", name);
-            
+
             if let Some(ref selected) = config.selected_device {
                 if &name != selected {
                     continue;
@@ -96,17 +96,17 @@ impl ConfigManager {
 
     async fn find_supported_config(&self, device: &cpal::Device) -> Result<StreamConfig> {
         let supported_configs = device.supported_input_configs()?;
-        
+
         for config_range in supported_configs {
             let config = config_range.with_max_sample_rate();
             info!("Trying config: {:?}", config);
-            
+
             // Check if the config is supported
             if device.default_input_config().map(|c| c.sample_rate().0).unwrap_or(0) == config.sample_rate().0 {
                 return Ok(config.into());
             }
         }
-        
+
         // Fallback to default config if no matching config found
         device.default_input_config()
             .map(|c| c.into())

@@ -15,7 +15,7 @@ async fn main() -> Result<()> {
 
     let app_state = AppState::new().await?;
     processor::setup_audio_processing(&app_state).await?;
-    
+
     server::run_server(&app_state).await?;
     Ok(())
 }
