@@ -1,4 +1,4 @@
-use crate::error::{LifeLoggingError, Result};
+use crate::error::{AudioError, ConfigError, Result};
 use config::{Config as ConfigSource, Environment, File};
 use cpal::traits::{DeviceTrait, HostTrait};
 use cpal::StreamConfig;
@@ -34,9 +34,13 @@ impl ConfigManager {
             .add_source(File::with_name("config/default").required(false))
             .add_source(File::with_name(&format!("config/{}", env)).required(false))
             .add_source(Environment::with_prefix("LIFELOGGING").separator("__"))
-            .build()?;
+            .build()
+            .map_err(|e| ConfigError::File(e.to_string()))?;
 
-        let config = config_source.clone().try_deserialize()?;
+        let config = config_source
+            .clone()
+            .try_deserialize()
+            .map_err(ConfigError::Parse)?;
 
         Ok(Self {
             config: Arc::new(RwLock::new(config)),
@@ -77,9 +81,10 @@ impl ConfigManager {
             }
         }
 
-        Err(LifeLoggingError::AudioDevice(
-            "No working audio input device and configuration found".into(),
-        ))
+        Err(
+            AudioError::Device("No working audio input device and configuration found".into())
+                .into(),
+        )
     }
 
     async fn find_supported_config(&self, device: &cpal::Device) -> Result<StreamConfig> {
@@ -104,6 +109,6 @@ impl ConfigManager {
         device
             .default_input_config()
             .map(|c| c.into())
-            .map_err(|e| LifeLoggingError::AudioDevice(format!("No supported config found: {}", e)))
+            .map_err(|e| AudioError::Device(format!("No supported config found: {}", e)).into())
     }
 }

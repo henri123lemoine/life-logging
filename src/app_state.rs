@@ -1,6 +1,6 @@
 use crate::audio::buffer::CircularAudioBuffer;
 use crate::config::CONFIG_MANAGER;
-use crate::error::{LifeLoggingError, Result};
+use crate::error::{AudioError, Result};
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 use tokio::sync::broadcast;
@@ -33,9 +33,7 @@ impl AppState {
 
     pub fn update_sample_rate(&self, new_sample_rate: u32) -> Result<()> {
         let mut audio_buffer = self.audio_buffer.write().map_err(|_| {
-            LifeLoggingError::AudioDevice(
-                "Failed to acquire write lock on audio buffer".to_string(),
-            )
+            AudioError::Device("Failed to acquire write lock on audio buffer".to_string())
         })?;
         let old_sample_rate = audio_buffer.sample_rate;
         let old_capacity = audio_buffer.capacity;
