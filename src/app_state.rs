@@ -18,13 +18,14 @@ pub struct AppState {
 impl AppState {
     pub async fn new() -> Result<Arc<Self>> {
         let config = CONFIG_MANAGER.get_config().await;
+        let buffer_duration = Duration::from_secs(config.read().await.buffer_duration);
         let (_, stream_config) = CONFIG_MANAGER.get_audio_config().await?;
         let buffer_size =
             config.read().await.buffer_duration as usize * stream_config.sample_rate.0 as usize;
 
         let disk_storage = Arc::new(DiskStorage::new(
             PathBuf::from("./data/audio_storage"),
-            Duration::from_secs(60),
+            buffer_duration,
             "wav".to_string(),
             44100,
         )?);
