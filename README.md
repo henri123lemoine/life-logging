@@ -114,8 +114,10 @@ This project involves continuous audio recording, which has significant privacy 
 
 ## Future Improvements
 
-- [ ] Long-term audio persistence with s3
+- [ ] Long-term audio persistence
+  - [x] Every `n` seconds, store the audio buffer to disk
   - [ ] Efficient compression with Opus at 32kbps and silence removal
+  - [ ] Implement s3 persistence
 - [ ] Transcription with whisperx
 - [ ] Audio analysis (e.g., live note detection)
 - [ ] Websocket support for real-time audio streaming
