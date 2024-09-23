@@ -1,9 +1,8 @@
 use crate::error::{AudioError, Result};
 use once_cell::sync::Lazy;
-use opus::{Application, Bitrate, Channels};
 use std::collections::HashMap;
 use std::io::Write;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use tempfile::NamedTempFile;
 use tracing::{error, info};
 
@@ -146,44 +145,50 @@ pub struct OpusEncoder;
 
 impl AudioEncoder for OpusEncoder {
     fn encode(&self, data: &[f32], sample_rate: u32) -> Result<Vec<u8>> {
-        // Configure the Opus encoder
-        let mut encoder = opus::Encoder::new(sample_rate, Channels::Mono, Application::Audio)
-            .map_err(|e| AudioError::Encoding(format!("Failed to create Opus encoder: {}", e)))?;
+        // Create a temporary WAV file
+        let mut temp_wav = NamedTempFile::new()
+            .map_err(|e| AudioError::Encoding(format!("Failed to create temp WAV file: {}", e)))?;
 
-        // Set the bitrate to 32 kbps
-        encoder
-            .set_bitrate(Bitrate::Bits(32000))
-            .map_err(|e| AudioError::Encoding(format!("Failed to set Opus bitrate: {}", e)))?;
+        // Write WAV data to the temporary file
+        let wav_encoder = WavEncoder;
+        let wav_data = wav_encoder.encode(data, sample_rate)?;
+        temp_wav
+            .write_all(&wav_data)
+            .map_err(|e| AudioError::Encoding(format!("Failed to write WAV data: {}", e)))?;
 
-        // Opus works with 20ms frames, so we need to calculate the frame size
-        let frame_size = (sample_rate as usize / 1000) * 20;
+        // Use FFmpeg to convert WAV to Opus
+        let output = Command::new("ffmpeg")
+            .arg("-i")
+            .arg(temp_wav.path())
+            .arg("-c:a")
+            .arg("libopus")
+            .arg("-b:a")
+            .arg("32k") // 32 kbps
+            .arg("-f")
+            .arg("opus")
+            .arg("-")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .map_err(|e| AudioError::Encoding(format!("Failed to execute FFmpeg: {}", e)))?;
 
-        // Prepare the output buffer
-        // The maximum size of an Opus packet for this configuration
-        let max_packet_size = 1275; // This is the maximum for 48kHz stereo
-        let mut output = Vec::new();
-
-        // Encode the audio data in 20ms frames
-        for chunk in data.chunks(frame_size) {
-            let mut packet = vec![0u8; max_packet_size];
-            let packet_len = encoder
-                .encode_float(chunk, &mut packet)
-                .map_err(|e| AudioError::Encoding(format!("Failed to encode Opus frame: {}", e)))?;
-
-            output.extend_from_slice(&(packet_len as u32).to_le_bytes());
-            output.extend_from_slice(&packet[..packet_len]);
+        if !output.status.success() {
+            let error_message = String::from_utf8_lossy(&output.stderr);
+            return Err(
+                AudioError::Encoding(format!("FFmpeg encoding failed: {}", error_message)).into(),
+            );
         }
 
         info!(
             "Encoded {} samples into {} bytes of Opus data",
             data.len(),
-            output.len()
+            output.stdout.len()
         );
-        Ok(output)
+        Ok(output.stdout)
     }
 
     fn mime_type(&self) -> &'static str {
-        "audio/opus"
+        "audio/ogg"
     }
 
     fn content_disposition(&self) -> &'static str {
