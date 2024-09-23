@@ -1,4 +1,4 @@
-use crate::audio::buffer::CircularAudioBuffer;
+use crate::audio::buffer::AudioBuffer;
 use crate::config::CONFIG_MANAGER;
 use crate::error::{AudioError, Result};
 use std::sync::{Arc, RwLock};
@@ -7,7 +7,7 @@ use tokio::sync::broadcast;
 use tracing::info;
 
 pub struct AppState {
-    pub audio_buffer: Arc<RwLock<CircularAudioBuffer>>,
+    pub audio_buffer: Arc<RwLock<AudioBuffer>>,
     pub audio_sender: broadcast::Sender<Vec<f32>>,
     pub start_time: SystemTime,
 }
@@ -18,9 +18,8 @@ impl AppState {
         let (_, stream_config) = CONFIG_MANAGER.get_audio_config().await?;
         let buffer_size =
             config.read().await.buffer_duration as usize * stream_config.sample_rate.0 as usize;
-
         let app_state = Arc::new(AppState {
-            audio_buffer: Arc::new(RwLock::new(CircularAudioBuffer::new(
+            audio_buffer: Arc::new(RwLock::new(AudioBuffer::new(
                 buffer_size,
                 stream_config.sample_rate.0,
             ))),
@@ -36,7 +35,7 @@ impl AppState {
             AudioError::Device("Failed to acquire write lock on audio buffer".to_string())
         })?;
         let old_sample_rate = audio_buffer.sample_rate;
-        let old_capacity = audio_buffer.capacity;
+        let old_capacity = audio_buffer.buffer.capacity;
 
         if old_sample_rate == new_sample_rate {
             return Ok(());
@@ -53,16 +52,16 @@ impl AppState {
             let old_index_ceil = (old_index.ceil() as usize).min(old_capacity - 1);
             let frac = old_index - old_index.floor();
 
-            let old_pos1 = (audio_buffer.write_position + old_index_floor) % old_capacity;
-            let old_pos2 = (audio_buffer.write_position + old_index_ceil) % old_capacity;
+            let old_pos1 = (audio_buffer.buffer.write_position + old_index_floor) % old_capacity;
+            let old_pos2 = (audio_buffer.buffer.write_position + old_index_ceil) % old_capacity;
 
-            *sample =
-                audio_buffer.buffer[old_pos1] * (1.0 - frac) + audio_buffer.buffer[old_pos2] * frac;
+            *sample = audio_buffer.buffer.buffer[old_pos1] * (1.0 - frac)
+                + audio_buffer.buffer.buffer[old_pos2] * frac;
         }
 
-        audio_buffer.buffer = new_buffer;
-        audio_buffer.write_position = 0;
-        audio_buffer.capacity = new_capacity;
+        audio_buffer.buffer.buffer = new_buffer;
+        audio_buffer.buffer.write_position = 0;
+        audio_buffer.buffer.capacity = new_capacity;
         audio_buffer.sample_rate = new_sample_rate;
 
         info!(

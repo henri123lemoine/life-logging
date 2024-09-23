@@ -1,5 +1,5 @@
 use crate::app_state::AppState;
-use crate::audio::buffer::CircularAudioBuffer;
+use crate::audio::buffer::AudioBuffer;
 use crate::config::CONFIG_MANAGER;
 use crate::error::Result;
 use cpal::traits::{DeviceTrait, StreamTrait};
@@ -35,7 +35,7 @@ pub async fn setup_audio_processing(app_state: &Arc<AppState>) -> Result<()> {
 
 #[instrument(skip(audio_buffer, audio_receiver))]
 async fn audio_processing_task(
-    audio_buffer: Arc<RwLock<CircularAudioBuffer>>,
+    audio_buffer: Arc<RwLock<AudioBuffer>>,
     audio_receiver: &mut broadcast::Receiver<Vec<f32>>,
 ) {
     info!("Starting audio processing task");
@@ -46,6 +46,7 @@ async fn audio_processing_task(
                 if let Ok(data) = result {
                     let mut buffer = audio_buffer.write().unwrap();
                     buffer.write(&data);
+                    // buffer.write_fast(&data);
                 }
             }
         }
