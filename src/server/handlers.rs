@@ -37,13 +37,23 @@ pub async fn health_check(State(state): State<Arc<AppState>>) -> Json<serde_json
 pub async fn test(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     info!("Testing endpoint");
 
-    // Just clone the buffer contents to another buffer
-    let audio_buffer = state.audio_buffer.read().unwrap();
-    let buffer = audio_buffer.buffer.buffer.clone();
+    let buffer_len = {
+        let audio_buffer = state.audio_buffer.read().unwrap();
+        let buffer = audio_buffer.buffer.buffer.clone();
+        buffer.len()
+    }; // ^^ 5ms
+
+    let response = {
+        let encoder = ENCODER_FACTORY.get_encoder("wav").unwrap();
+        let duration = Some(Duration::from_secs(120));
+        encode_and_respond(state, encoder, duration).await
+    }; // ^^ 140ms
+    info!("Test response: {:?}", response);
+
     Json(json!({
         "status": "ok",
         "message": "Successfully cloned audio buffer",
-        "length": buffer.len(),
+        "length": buffer_len,
     }))
 }
 
