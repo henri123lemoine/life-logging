@@ -147,8 +147,10 @@ pub async fn change_audio_device(
     State(_state): State<Arc<AppState>>,
     Json(_payload): Json<ChangeDeviceRequest>,
 ) -> Json<serde_json::Value> {
+    // TODO: Implement changing audio device
     Json(json!({
         "status": "error",
-        "message": "Not implemented"
+        "message": "This endpoint is not yet implemented",
+        "code": "NOT_IMPLEMENTED"
     }))
 }
