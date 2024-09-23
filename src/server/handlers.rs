@@ -15,6 +15,14 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, info};
 
+#[utoipa::path(
+    get,
+    path = "/health",
+    responses(
+        (status = 200, description = "Server is healthy", body = serde_json::Value)
+    ),
+    tag = "system"
+)]
 pub async fn health_check(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     let uptime = state.start_time.elapsed().unwrap_or_default();
     let response = serde_json::json!({
@@ -26,6 +34,20 @@ pub async fn health_check(State(state): State<Arc<AppState>>) -> Json<serde_json
     Json(response)
 }
 
+#[utoipa::path(
+    get,
+    path = "/get_audio",
+    params(
+        ("format" = Option<String>, Query, description = "Audio format (wav, flac, etc.)"),
+        ("duration" = Option<f32>, Query, description = "Duration of audio to retrieve in seconds")
+    ),
+    responses(
+        (status = 200, description = "Successfully retrieved audio", content_type = "audio/wav"),
+        (status = 400, description = "Bad request", body = String),
+        (status = 500, description = "Internal server error", body = String)
+    ),
+    tag = "audio"
+)]
 pub async fn get_audio(
     State(state): State<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>,
@@ -90,6 +112,15 @@ fn encoding_error_response(e: LifeLoggingError) -> Response {
         .into_response()
 }
 
+#[utoipa::path(
+    get,
+    path = "/visualize_audio",
+    responses(
+        (status = 200, description = "Successfully generated audio visualization", content_type = "image/png"),
+        (status = 500, description = "Internal server error", body = String)
+    ),
+    tag = "audio"
+)]
 pub async fn visualize_audio(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let width = 800;
     let height = 400;
@@ -108,6 +139,15 @@ pub async fn visualize_audio(State(state): State<Arc<AppState>>) -> impl IntoRes
     )
 }
 
+#[utoipa::path(
+    get,
+    path = "/list_devices",
+    responses(
+        (status = 200, description = "Successfully retrieved audio devices", body = serde_json::Value),
+        (status = 500, description = "Internal server error", body = String)
+    ),
+    tag = "audio"
+)]
 pub async fn list_audio_devices() -> Json<serde_json::Value> {
     let host = cpal::default_host();
 
@@ -138,11 +178,22 @@ pub async fn list_audio_devices() -> Json<serde_json::Value> {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct ChangeDeviceRequest {
     _device_id: String,
 }
 
+#[utoipa::path(
+    post,
+    path = "/change_device",
+    request_body = ChangeDeviceRequest,
+    responses(
+        (status = 200, description = "Device changed successfully", body = serde_json::Value),
+        (status = 400, description = "Bad request", body = String),
+        (status = 500, description = "Internal server error", body = String)
+    ),
+    tag = "audio"
+)]
 pub async fn change_audio_device(
     State(_state): State<Arc<AppState>>,
     Json(_payload): Json<ChangeDeviceRequest>,

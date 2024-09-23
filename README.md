@@ -59,6 +59,8 @@ The server will start on `http://127.0.0.1:61429`, or whichever port is chosen i
 - **Visualize Audio**: `GET /visualize_audio` - Returns a PNG image visualizing the recent audio data. Useful for debugging.
 - **Health Check**: `GET /health` - Returns the server's health status.
 
+Run the app and visit `http://localhost:61429/swagger-ui/` to view the full API documentation.
+
 ### Examples
 
 Retrieve the last minute of audio in WAV format:

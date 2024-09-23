@@ -10,6 +10,27 @@ use axum::{
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::info;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(
+        handlers::health_check,
+        handlers::get_audio,
+        handlers::visualize_audio,
+        handlers::list_audio_devices,
+        handlers::change_audio_device,
+    ),
+    components(
+        schemas(handlers::ChangeDeviceRequest)
+    ),
+    tags(
+        (name = "audio", description = "Audio retrieval and management endpoints"),
+        (name = "system", description = "System health and management")
+    )
+)]
+struct ApiDoc;
 
 async fn logging_middleware(req: Request, next: Next) -> Response {
     let path = req.uri().path().to_owned();
@@ -39,6 +60,7 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         .route("/visualize_audio", get(handlers::visualize_audio))
         .route("/list_devices", get(handlers::list_audio_devices))
         .route("/change_device", post(handlers::change_audio_device))
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .layer(axum::middleware::from_fn(logging_middleware))
         .with_state(app_state)
 }
