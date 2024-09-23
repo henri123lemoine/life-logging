@@ -134,7 +134,7 @@ impl AudioEncoder for FlacEncoder {
     }
 
     fn mime_type(&self) -> &'static str {
-        "audio/wav"
+        "audio/flac"
     }
 
     fn content_disposition(&self) -> &'static str {
@@ -183,7 +183,7 @@ impl AudioEncoder for OpusEncoder {
     }
 
     fn mime_type(&self) -> &'static str {
-        "audio/wav"
+        "audio/opus"
     }
 
     fn content_disposition(&self) -> &'static str {
