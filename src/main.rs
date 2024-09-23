@@ -11,6 +11,17 @@ async fn main() -> Result<()> {
     let app_state = AppState::new().await?;
     processor::setup_audio_processing(&app_state).await?;
 
+    // Start the persistence task
+    tokio::spawn({
+        let app_state = app_state.clone();
+        async move {
+            app_state
+                .disk_storage
+                .start_persistence_task(app_state.audio_buffer.clone())
+                .await;
+        }
+    });
+
     server::run_server(&app_state).await?;
     Ok(())
 }
