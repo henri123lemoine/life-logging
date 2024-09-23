@@ -1,3 +1,4 @@
+use std::io;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -8,11 +9,14 @@ pub enum LifeLoggingError {
     #[error("Configuration error: {0}")]
     Config(#[from] ConfigError),
 
-    #[error("Server error: {0}")]
-    Server(#[from] ServerError),
-
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("Persistence error: {0}")]
+    Persistence(#[from] PersistenceError),
+
+    #[error("Server error: {0}")]
+    Server(#[from] ServerError),
 }
 
 #[derive(Error, Debug)]
@@ -53,6 +57,21 @@ pub enum ConfigError {
 
     #[error("Invalid configuration value: {0}")]
     InvalidValue(String),
+}
+
+#[derive(Error, Debug)]
+pub enum PersistenceError {
+    #[error("Failed to create storage directory: {0}")]
+    DirectoryCreation(io::Error),
+
+    #[error("Unsupported audio format: {0}")]
+    UnsupportedFormat(String),
+
+    #[error("Failed to write audio data: {0}")]
+    FileWrite(io::Error),
+
+    #[error("Failed to acquire read lock on audio buffer")]
+    BufferLockAcquisition,
 }
 
 #[allow(dead_code)]
