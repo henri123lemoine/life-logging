@@ -10,6 +10,7 @@ pub trait AudioEncoder: Send + Sync {
     fn encode(&self, data: &[f32], sample_rate: u32) -> Result<Vec<u8>>;
     fn mime_type(&self) -> &'static str;
     fn content_disposition(&self) -> &'static str;
+    fn file_extension(&self) -> &'static str;
 }
 
 pub struct PcmEncoder;
@@ -29,6 +30,10 @@ impl AudioEncoder for PcmEncoder {
 
     fn content_disposition(&self) -> &'static str {
         "attachment; filename=\"audio.pcm\""
+    }
+
+    fn file_extension(&self) -> &'static str {
+        "pcm"
     }
 }
 
@@ -89,6 +94,10 @@ impl AudioEncoder for WavEncoder {
     fn content_disposition(&self) -> &'static str {
         "attachment; filename=\"audio.wav\""
     }
+
+    fn file_extension(&self) -> &'static str {
+        "wav"
+    }
 }
 
 pub struct FlacEncoder;
@@ -138,6 +147,10 @@ impl AudioEncoder for FlacEncoder {
 
     fn content_disposition(&self) -> &'static str {
         "attachment; filename=\"audio.flac\""
+    }
+
+    fn file_extension(&self) -> &'static str {
+        "flac"
     }
 }
 
@@ -193,6 +206,10 @@ impl AudioEncoder for OpusEncoder {
 
     fn content_disposition(&self) -> &'static str {
         "attachment; filename=\"audio.opus\""
+    }
+
+    fn file_extension(&self) -> &'static str {
+        "opus"
     }
 }
 

@@ -45,8 +45,7 @@ pub async fn test(State(state): State<Arc<AppState>>) -> Json<serde_json::Value>
 
     let response = {
         let encoder = ENCODER_FACTORY.get_encoder("wav").unwrap();
-        let duration = Some(Duration::from_secs(120));
-        encode_and_respond(state, encoder, duration).await
+        encode_and_respond(state, encoder, None).await
     }; // ^^ 140ms
     info!("Test response: {:?}", response);
 

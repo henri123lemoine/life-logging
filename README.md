@@ -54,7 +54,7 @@ The server will start on `http://127.0.0.1:61429`, or whichever port is chosen i
 ## Usage
 
 - **Get Audio**: `GET /get_audio` - Returns the most recent audio data. Query parameters:
-  - `format`: The audio format to return. Supported formats are `pcm`, `wav`, and `flac`. Default is `wav`.
+  - `format`: The audio format to return. Supported formats are `pcm`, `wav`, `flac`, and `opus`. Default is `wav`.
   - `duration`: The duration of audio to return, in seconds. Default is the entire buffer.
 - **Visualize Audio**: `GET /visualize_audio` - Returns a PNG image visualizing the recent audio data. Useful for debugging.
 - **Health Check**: `GET /health` - Returns the server's health status.
