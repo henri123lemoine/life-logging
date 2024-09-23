@@ -1,6 +1,6 @@
 use crate::app_state::AppState;
 use crate::audio::encoder::{AudioEncoder, ENCODER_FACTORY};
-use crate::error::LifeLoggingError;
+use crate::audio::visualizer::AudioVisualizer;
 use axum::{
     extract::{Query, State},
     http::{header, StatusCode},
@@ -35,7 +35,7 @@ pub async fn health_check(State(state): State<Arc<AppState>>) -> Json<serde_json
 }
 
 pub async fn test(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
-    info!("Testing endpoint");
+    info!("Testing endpoint. Used for development purposes only.");
 
     let buffer_len = {
         let audio_buffer = state.audio_buffer.read().unwrap();
@@ -49,6 +49,8 @@ pub async fn test(State(state): State<Arc<AppState>>) -> Json<serde_json::Value>
         encode_and_respond(state, encoder, duration).await
     }; // ^^ 140ms
     info!("Test response: {:?}", response);
+
+    // Note: Encoding is the bottleneck here
 
     Json(json!({
         "status": "ok",
@@ -87,7 +89,12 @@ pub async fn get_audio(
 
     match ENCODER_FACTORY.get_encoder(&format) {
         Some(encoder) => encode_and_respond(state, encoder, duration).await,
-        None => unsupported_format_response(),
+        None => (
+            StatusCode::BAD_REQUEST,
+            [(header::CONTENT_TYPE, "application/json")],
+            Json(json!({"error": "Unsupported audio format"})),
+        )
+            .into_response(),
     }
 }
 
@@ -97,42 +104,31 @@ async fn encode_and_respond(
     duration: Option<Duration>,
 ) -> Response {
     let audio_buffer = state.audio_buffer.read().unwrap();
-    match audio_buffer.encode(encoder, duration) {
-        Ok(encoded_data) => successful_encoding_response(encoder, encoded_data),
-        Err(e) => encoding_error_response(e),
+    let data = audio_buffer.read(duration);
+    let sample_rate = audio_buffer.sample_rate;
+    match encoder.encode(&data, sample_rate) {
+        Ok(encoded_data) => {
+            info!("Successfully encoded {} bytes of audio", encoded_data.len());
+            (
+                StatusCode::OK,
+                [
+                    (header::CONTENT_TYPE, encoder.mime_type()),
+                    (header::CONTENT_DISPOSITION, encoder.content_disposition()),
+                ],
+                encoded_data,
+            )
+                .into_response()
+        }
+        Err(e) => {
+            error!("Failed to encode audio: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                [(header::CONTENT_TYPE, "application/json")],
+                Json(json!({"error": format!("Failed to encode audio: {}", e)})),
+            )
+                .into_response()
+        }
     }
-}
-
-fn successful_encoding_response(encoder: &dyn AudioEncoder, encoded_data: Vec<u8>) -> Response {
-    info!("Successfully encoded {} bytes of audio", encoded_data.len());
-    (
-        StatusCode::OK,
-        [
-            (header::CONTENT_TYPE, encoder.mime_type()),
-            (header::CONTENT_DISPOSITION, encoder.content_disposition()),
-        ],
-        encoded_data,
-    )
-        .into_response()
-}
-
-fn unsupported_format_response() -> Response {
-    (
-        StatusCode::BAD_REQUEST,
-        [(header::CONTENT_TYPE, "application/json")],
-        Json(json!({"error": "Unsupported audio format"})),
-    )
-        .into_response()
-}
-
-fn encoding_error_response(e: LifeLoggingError) -> Response {
-    error!("Failed to encode audio: {}", e);
-    (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        [(header::CONTENT_TYPE, "application/json")],
-        Json(json!({"error": format!("Failed to encode audio: {}", e)})),
-    )
-        .into_response()
 }
 
 #[utoipa::path(
@@ -148,9 +144,7 @@ pub async fn visualize_audio(State(state): State<Arc<AppState>>) -> impl IntoRes
     let width = 800;
     let height = 400;
     let audio_buffer = state.audio_buffer.read().unwrap();
-    let image_data = audio_buffer.visualize(width, height);
-
-    tracing::info!("Generated audio visualization image");
+    let image_data = AudioVisualizer::create_waveform(&audio_buffer.read(None), width, height);
 
     (
         StatusCode::OK,

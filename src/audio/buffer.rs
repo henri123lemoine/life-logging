@@ -1,6 +1,3 @@
-use crate::audio::encoder::AudioEncoder;
-use crate::audio::visualizer::AudioVisualizer;
-use crate::error::Result;
 use std::ptr;
 use std::time::Duration;
 use tracing::info;
@@ -120,19 +117,5 @@ impl AudioBuffer {
         .min(self.buffer.capacity);
 
         self.buffer.read(samples_to_return)
-    }
-
-    pub fn encode(
-        &self,
-        encoder: &dyn AudioEncoder,
-        duration: Option<Duration>,
-    ) -> Result<Vec<u8>> {
-        let audio_data = self.read(duration);
-        encoder.encode(&audio_data, self.sample_rate)
-    }
-
-    pub fn visualize(&self, width: u32, height: u32) -> Vec<u8> {
-        let audio_data = self.read(None);
-        AudioVisualizer::create_waveform(&audio_data, width, height)
     }
 }
