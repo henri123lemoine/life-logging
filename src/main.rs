@@ -1,8 +1,8 @@
+mod app_state;
 mod audio;
 mod config;
-mod server;
-mod app_state;
 mod error;
+mod server;
 
 use app_state::AppState;
 use audio::processor;

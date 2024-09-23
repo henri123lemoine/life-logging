@@ -1,15 +1,15 @@
-use std::sync::{Arc, RwLock};
-use cpal::Stream;
-use cpal::traits::{DeviceTrait, StreamTrait};
-use rustfft::{FftPlanner, num_complex::Complex};
-use std::time::Duration;
-use tokio::task;
-use tokio::sync::{broadcast, mpsc};
-use tracing::{info, warn, instrument};
 use crate::app_state::AppState;
 use crate::audio::buffer::CircularAudioBuffer;
 use crate::config::CONFIG_MANAGER;
 use crate::error::Result;
+use cpal::traits::{DeviceTrait, StreamTrait};
+use cpal::Stream;
+use rustfft::{num_complex::Complex, FftPlanner};
+use std::sync::{Arc, RwLock};
+use std::time::Duration;
+use tokio::sync::{broadcast, mpsc};
+use tokio::task;
+use tracing::{info, instrument, warn};
 
 #[instrument(skip(app_state))]
 pub async fn setup_audio_processing(app_state: &Arc<AppState>) -> Result<()> {
@@ -67,21 +67,22 @@ fn audio_stream_management_task(app_state: Arc<AppState>) {
         let stream = match task::block_in_place(|| {
             tokio::runtime::Runtime::new()
                 .unwrap()
-                .block_on(async {
-                    start_audio_stream(&app_state, tx).await
-                })
+                .block_on(async { start_audio_stream(&app_state, tx).await })
         }) {
             Ok((stream, new_sample_rate)) => {
                 let mut buffer = app_state.audio_buffer.write().unwrap();
                 if new_sample_rate != buffer.sample_rate {
-                    info!("Sample rate changed from {} to {}", buffer.sample_rate, new_sample_rate);
+                    info!(
+                        "Sample rate changed from {} to {}",
+                        buffer.sample_rate, new_sample_rate
+                    );
                     buffer.is_consistent = false;
                     drop(buffer); // Release the write lock
                     app_state.update_sample_rate(new_sample_rate).unwrap();
                     app_state.audio_buffer.write().unwrap().is_consistent = true;
                 }
                 stream
-            },
+            }
             Err(e) => {
                 tracing::error!("Failed to start audio stream: {}", e);
                 std::thread::sleep(Duration::from_secs(5));
@@ -107,7 +108,10 @@ fn audio_stream_management_task(app_state: Arc<AppState>) {
 }
 
 #[instrument(skip(app_state, tx))]
-async fn start_audio_stream(app_state: &Arc<AppState>, tx: mpsc::Sender<()>) -> Result<(Stream, u32)> {
+async fn start_audio_stream(
+    app_state: &Arc<AppState>,
+    tx: mpsc::Sender<()>,
+) -> Result<(Stream, u32)> {
     info!("Starting audio stream");
 
     let (device, config) = CONFIG_MANAGER.get_audio_config().await?;
@@ -128,10 +132,13 @@ async fn start_audio_stream(app_state: &Arc<AppState>, tx: mpsc::Sender<()>) -> 
             tracing::error!("An error occurred on stream: {}", err);
             let _ = tx2.try_send(());
         },
-        Some(Duration::from_secs(2))
+        Some(Duration::from_secs(2)),
     )?;
 
-    tracing::info!("Audio stream created with sample rate: {}", config.sample_rate.0);
+    tracing::info!(
+        "Audio stream created with sample rate: {}",
+        config.sample_rate.0
+    );
 
     Ok((stream, config.sample_rate.0))
 }
@@ -142,7 +149,11 @@ pub fn normalize_volume(data: &mut [f32], target_peak: f32) -> Result<()> {
         return Ok(());
     }
 
-    let max_amplitude = data.iter().map(|&x| x.abs()).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+    let max_amplitude = data
+        .iter()
+        .map(|&x| x.abs())
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
 
     if max_amplitude == 0.0 {
         return Ok(());

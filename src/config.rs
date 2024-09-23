@@ -1,12 +1,12 @@
-use std::sync::Arc;
+use crate::error::{LifeLoggingError, Result};
 use config::{Config as ConfigSource, Environment, File};
-use serde::Deserialize;
-use tokio::sync::RwLock;
-use once_cell::sync::Lazy;
 use cpal::traits::{DeviceTrait, HostTrait};
 use cpal::StreamConfig;
+use once_cell::sync::Lazy;
+use serde::Deserialize;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use tracing::{info, warn};
-use crate::error::{LifeLoggingError, Result};
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
@@ -20,9 +20,8 @@ pub struct ServerSettings {
     pub port: u16,
 }
 
-pub static CONFIG_MANAGER: Lazy<ConfigManager> = Lazy::new(|| {
-    ConfigManager::new().expect("Failed to initialize ConfigManager")
-});
+pub static CONFIG_MANAGER: Lazy<ConfigManager> =
+    Lazy::new(|| ConfigManager::new().expect("Failed to initialize ConfigManager"));
 
 pub struct ConfigManager {
     config: Arc<RwLock<Config>>,
@@ -53,7 +52,10 @@ impl ConfigManager {
         self.find_working_device_and_config(&host).await
     }
 
-    async fn find_working_device_and_config(&self, host: &cpal::Host) -> Result<(cpal::Device, StreamConfig)> {
+    async fn find_working_device_and_config(
+        &self,
+        host: &cpal::Host,
+    ) -> Result<(cpal::Device, StreamConfig)> {
         let devices = host.input_devices()?;
 
         for device in devices {
@@ -62,7 +64,10 @@ impl ConfigManager {
 
             match self.find_supported_config(&device).await {
                 Ok(stream_config) => {
-                    info!("Found working config for device {}: {:?}", name, stream_config);
+                    info!(
+                        "Found working config for device {}: {:?}",
+                        name, stream_config
+                    );
                     return Ok((device, stream_config));
                 }
                 Err(e) => {
@@ -72,7 +77,9 @@ impl ConfigManager {
             }
         }
 
-        Err(LifeLoggingError::AudioDeviceError("No working audio input device and configuration found".into()))
+        Err(LifeLoggingError::AudioDevice(
+            "No working audio input device and configuration found".into(),
+        ))
     }
 
     async fn find_supported_config(&self, device: &cpal::Device) -> Result<StreamConfig> {
@@ -83,14 +90,20 @@ impl ConfigManager {
             info!("Trying config: {:?}", config);
 
             // Check if the config is supported
-            if device.default_input_config().map(|c| c.sample_rate().0).unwrap_or(0) == config.sample_rate().0 {
+            if device
+                .default_input_config()
+                .map(|c| c.sample_rate().0)
+                .unwrap_or(0)
+                == config.sample_rate().0
+            {
                 return Ok(config.into());
             }
         }
 
         // Fallback to default config if no matching config found
-        device.default_input_config()
+        device
+            .default_input_config()
             .map(|c| c.into())
-            .map_err(|e| LifeLoggingError::AudioDeviceError(format!("No supported config found: {}", e)))
+            .map_err(|e| LifeLoggingError::AudioDevice(format!("No supported config found: {}", e)))
     }
 }

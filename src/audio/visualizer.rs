@@ -1,5 +1,5 @@
-use plotters::prelude::*;
 use plotters::backend::RGBPixel;
+use plotters::prelude::*;
 use tracing::info;
 
 pub struct AudioVisualizer;
@@ -8,10 +8,10 @@ impl AudioVisualizer {
     pub fn create_waveform(data: &[f32], width: u32, height: u32) -> Vec<u8> {
         let mut buffer = vec![0u8; (width * height * 3) as usize];
         {
-            let root = BitMapBackend::<RGBPixel>::with_buffer_and_format(
-                &mut buffer,
-                (width, height)
-            ).unwrap().into_drawing_area();
+            let root =
+                BitMapBackend::<RGBPixel>::with_buffer_and_format(&mut buffer, (width, height))
+                    .unwrap()
+                    .into_drawing_area();
 
             root.fill(&WHITE).unwrap();
 
@@ -46,7 +46,10 @@ impl AudioVisualizer {
             writer.write_image_data(&buffer).unwrap();
         }
 
-        info!("Generated waveform visualization of {} bytes", png_data.len());
+        info!(
+            "Generated waveform visualization of {} bytes",
+            png_data.len()
+        );
         png_data
     }
 }
