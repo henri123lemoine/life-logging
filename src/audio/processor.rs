@@ -70,16 +70,14 @@ fn audio_stream_management_task(app_state: Arc<AppState>) {
                 .block_on(async { start_audio_stream(&app_state, tx).await })
         }) {
             Ok((stream, new_sample_rate)) => {
-                let mut buffer = app_state.audio_buffer.write().unwrap();
+                let buffer = app_state.audio_buffer.write().unwrap();
                 if new_sample_rate != buffer.sample_rate {
                     info!(
                         "Sample rate changed from {} to {}",
                         buffer.sample_rate, new_sample_rate
                     );
-                    buffer.is_consistent = false;
                     drop(buffer); // Release the write lock
                     app_state.update_sample_rate(new_sample_rate).unwrap();
-                    app_state.audio_buffer.write().unwrap().is_consistent = true;
                 }
                 stream
             }

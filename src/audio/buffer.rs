@@ -10,7 +10,6 @@ pub struct CircularAudioBuffer {
     pub write_position: usize,
     pub capacity: usize,
     pub sample_rate: u32,
-    pub is_consistent: bool,
 }
 
 impl CircularAudioBuffer {
@@ -24,7 +23,6 @@ impl CircularAudioBuffer {
             write_position: 0,
             capacity,
             sample_rate,
-            is_consistent: true,
         }
     }
 
@@ -39,7 +37,6 @@ impl CircularAudioBuffer {
 
         let new_position = (current_position + data_len) % self.capacity;
         self.write_position = new_position;
-        self.is_consistent = true;
     }
 
     pub fn read(&self, duration: Option<Duration>) -> Vec<f32> {
