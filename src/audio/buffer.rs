@@ -72,10 +72,6 @@ impl CircularAudioBuffer {
 
     pub fn visualize(&self, width: u32, height: u32) -> Vec<u8> {
         let audio_data = self.read(None);
-        info!(
-            "Generating waveform visualization with dimensions {}x{}",
-            width, height
-        );
         AudioVisualizer::create_waveform(&audio_data, width, height)
     }
 
