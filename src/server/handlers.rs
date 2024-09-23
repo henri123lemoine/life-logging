@@ -34,6 +34,19 @@ pub async fn health_check(State(state): State<Arc<AppState>>) -> Json<serde_json
     Json(response)
 }
 
+pub async fn test(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+    info!("Testing endpoint");
+
+    // Just clone the buffer contents to another buffer
+    let audio_buffer = state.audio_buffer.read().unwrap();
+    let buffer = audio_buffer.buffer.buffer.clone();
+    Json(json!({
+        "status": "ok",
+        "message": "Successfully cloned audio buffer",
+        "length": buffer.len(),
+    }))
+}
+
 #[utoipa::path(
     get,
     path = "/get_audio",

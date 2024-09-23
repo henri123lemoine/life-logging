@@ -122,6 +122,11 @@ This project involves continuous audio recording, which has significant privacy 
 - [ ] Keypress logging integration
 - [ ] Occasional screenshots (?)
 
+## Performance investigations
+
+- Fast-write (with unsafe) is 10x faster than write.
+- 7ms to copy full buffer, 250ms to return the `.wav` file containing that buffer. How to optimize this?
+
 ## Acknowledgments
 
 - [CPAL](https://github.com/RustAudio/cpal) for audio capture

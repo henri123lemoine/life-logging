@@ -56,6 +56,7 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
     Router::new()
         .route("/", get(|| async { "Audio Recording Server" }))
         .route("/health", get(handlers::health_check))
+        .route("/test", get(handlers::test))
         .route("/get_audio", get(handlers::get_audio))
         .route("/visualize_audio", get(handlers::visualize_audio))
         .route("/list_devices", get(handlers::list_audio_devices))
