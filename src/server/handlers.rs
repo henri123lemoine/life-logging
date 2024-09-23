@@ -142,8 +142,9 @@ async fn encode_and_respond(
 pub async fn visualize_audio(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let width = 800;
     let height = 400;
+    let duration: Option<Duration> = Some(Duration::from_secs(30));
     let audio_buffer = state.audio_buffer.read().unwrap();
-    let image_data = AudioVisualizer::create_waveform(&audio_buffer.read(None), width, height);
+    let image_data = AudioVisualizer::create_waveform(&audio_buffer.read(duration), width, height);
 
     (
         StatusCode::OK,
