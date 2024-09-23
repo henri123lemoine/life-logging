@@ -4,6 +4,21 @@ use crate::error::Result;
 use std::time::Duration;
 use tracing::info;
 
+/// A circular buffer for storing audio data with a fixed capacity.
+///
+/// This buffer continuously overwrites old data when it reaches its capacity,
+/// effectively maintaining a rolling window of the most recent audio samples.
+///
+/// # Fields
+/// * `buffer`: The underlying storage for audio samples.
+/// * `write_position`: The current position where new samples will be written.
+/// * `capacity`: The total number of samples the buffer can hold.
+/// * `sample_rate`: The number of samples per second for the stored audio.
+///
+/// # Behavior
+/// - When new data is written, it overwrites the oldest data if the buffer is full.
+/// - The buffer always contains the most recent `capacity` samples of audio.
+/// - For a 120-second buffer, `capacity` would be `120 * sample_rate`.
 pub struct CircularAudioBuffer {
     pub buffer: Vec<f32>,
     pub write_position: usize,
