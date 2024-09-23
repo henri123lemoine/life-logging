@@ -39,7 +39,7 @@ pub async fn test(State(state): State<Arc<AppState>>) -> Json<serde_json::Value>
 
     let buffer_len = {
         let audio_buffer = state.audio_buffer.read().unwrap();
-        let buffer = audio_buffer.buffer.buffer.clone();
+        let buffer = audio_buffer.read(None);
         buffer.len()
     }; // ^^ 5ms
 
@@ -105,7 +105,7 @@ async fn encode_and_respond(
 ) -> Response {
     let audio_buffer = state.audio_buffer.read().unwrap();
     let data = audio_buffer.read(duration);
-    let sample_rate = audio_buffer.sample_rate;
+    let sample_rate = audio_buffer.get_sample_rate();
     match encoder.encode(&data, sample_rate) {
         Ok(encoded_data) => {
             info!("Successfully encoded {} bytes of audio", encoded_data.len());

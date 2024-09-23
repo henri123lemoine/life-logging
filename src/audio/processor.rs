@@ -1,14 +1,14 @@
 use crate::app_state::AppState;
 use crate::audio::buffer::AudioBuffer;
 use crate::config::CONFIG_MANAGER;
-use crate::error::Result;
+use crate::error::{AudioError, Result};
 use cpal::traits::{DeviceTrait, StreamTrait};
 use cpal::Stream;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio::sync::{broadcast, mpsc};
 use tokio::task;
-use tracing::{info, instrument, warn};
+use tracing::{error, info, instrument, warn};
 
 #[instrument(skip(app_state))]
 pub async fn setup_audio_processing(app_state: &Arc<AppState>) -> Result<()> {
@@ -65,29 +65,30 @@ fn audio_stream_management_task(app_state: Arc<AppState>) {
                 .block_on(async { start_audio_stream(&app_state, tx).await })
         }) {
             Ok((stream, new_sample_rate)) => {
-                let buffer = app_state.audio_buffer.write().unwrap();
-                if new_sample_rate != buffer.sample_rate {
-                    info!(
-                        "Sample rate changed from {} to {}",
-                        buffer.sample_rate, new_sample_rate
-                    );
-                    drop(buffer); // Release the write lock
-                    app_state.update_sample_rate(new_sample_rate).unwrap();
-                }
+                let mut audio_buffer = app_state
+                    .audio_buffer
+                    .write()
+                    .map_err(|_| {
+                        AudioError::Device(
+                            "Failed to acquire write lock on audio buffer".to_string(),
+                        )
+                    })
+                    .unwrap();
+                audio_buffer.update_sample_rate(new_sample_rate).unwrap();
                 stream
             }
             Err(e) => {
-                tracing::error!("Failed to start audio stream: {}", e);
+                error!("Failed to start audio stream: {}", e);
                 std::thread::sleep(Duration::from_secs(5));
                 continue;
             }
         };
 
-        tracing::info!("Audio stream started successfully");
+        info!("Audio stream started successfully");
 
         // Play the stream
         if let Err(e) = stream.play() {
-            tracing::error!("Failed to play audio stream: {}", e);
+            error!("Failed to play audio stream: {}", e);
             std::thread::sleep(Duration::from_secs(5));
             continue;
         }
@@ -95,7 +96,7 @@ fn audio_stream_management_task(app_state: Arc<AppState>) {
         // Wait for the stream to end or for an error
         rx.blocking_recv();
 
-        tracing::warn!("Audio stream ended, attempting to restart");
+        warn!("Audio stream ended, attempting to restart");
         std::thread::sleep(Duration::from_secs(1));
     }
 }
@@ -117,18 +118,18 @@ async fn start_audio_stream(
         &config,
         move |data: &[f32], _: &cpal::InputCallbackInfo| {
             if let Err(e) = audio_sender.send(data.to_vec()) {
-                tracing::warn!("Failed to send audio data: {}", e);
+                warn!("Failed to send audio data: {}", e);
                 let _ = tx1.try_send(());
             }
         },
         move |err| {
-            tracing::error!("An error occurred on stream: {}", err);
+            error!("An error occurred on stream: {}", err);
             let _ = tx2.try_send(());
         },
         Some(Duration::from_secs(2)),
     )?;
 
-    tracing::info!(
+    info!(
         "Audio stream created with sample rate: {}",
         config.sample_rate.0
     );

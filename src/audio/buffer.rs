@@ -1,3 +1,4 @@
+use crate::error::Result;
 use std::ptr;
 use std::time::Duration;
 use tracing::info;
@@ -12,9 +13,9 @@ use tracing::info;
 /// * `write_position`: The current position where new samples will be written.
 /// * `capacity`: The total number of samples the buffer can hold.
 pub struct CircularBuffer<T> {
-    pub buffer: Vec<T>,
-    pub write_position: usize,
-    pub capacity: usize,
+    buffer: Vec<T>,
+    write_position: usize,
+    capacity: usize,
 }
 
 impl<T: Copy + Default> CircularBuffer<T> {
@@ -81,11 +82,29 @@ impl<T: Copy + Default> CircularBuffer<T> {
             data
         }
     }
+
+    fn update_capacity(&mut self, new_capacity: usize) {
+        let mut new_buffer = vec![T::default(); new_capacity];
+        let count = self.capacity.min(new_capacity);
+
+        new_buffer
+            .iter_mut()
+            .enumerate()
+            .take(count)
+            .for_each(|(i, new_item)| {
+                let old_pos = (self.write_position + self.capacity - count + i) % self.capacity;
+                *new_item = self.buffer[old_pos];
+            });
+
+        self.buffer = new_buffer;
+        self.capacity = new_capacity;
+        self.write_position = count % new_capacity;
+    }
 }
 
 pub struct AudioBuffer {
-    pub buffer: CircularBuffer<f32>,
-    pub sample_rate: u32,
+    buffer: CircularBuffer<f32>,
+    sample_rate: u32,
 }
 
 impl AudioBuffer {
@@ -117,5 +136,43 @@ impl AudioBuffer {
         .min(self.buffer.capacity);
 
         self.buffer.read(samples_to_return)
+    }
+
+    pub fn update_sample_rate(&mut self, new_sample_rate: u32) -> Result<()> {
+        if self.sample_rate == new_sample_rate {
+            return Ok(());
+        }
+
+        let new_capacity = (self.buffer.capacity as f32 * new_sample_rate as f32
+            / self.sample_rate as f32)
+            .ceil() as usize;
+        let old_data = self.buffer.read(self.buffer.capacity);
+
+        // Resample the existing data
+        let new_data: Vec<f32> = (0..new_capacity)
+            .map(|i| {
+                let old_index = i as f32 * self.sample_rate as f32 / new_sample_rate as f32;
+                let old_index_floor = old_index.floor() as usize;
+                let old_index_ceil = (old_index.ceil() as usize).min(old_data.len() - 1);
+                let frac = old_index - old_index.floor();
+
+                old_data[old_index_floor] * (1.0 - frac) + old_data[old_index_ceil] * frac
+            })
+            .collect();
+
+        self.buffer.update_capacity(new_capacity);
+        self.buffer.write(&new_data);
+        self.sample_rate = new_sample_rate;
+
+        info!(
+            "Updated sample rate to {} Hz, new capacity: {} samples",
+            new_sample_rate, new_capacity
+        );
+
+        Ok(())
+    }
+
+    pub fn get_sample_rate(&self) -> u32 {
+        self.sample_rate
     }
 }
