@@ -4,7 +4,6 @@ use crate::config::CONFIG_MANAGER;
 use crate::error::Result;
 use cpal::traits::{DeviceTrait, StreamTrait};
 use cpal::Stream;
-use rustfft::{num_complex::Complex, FftPlanner};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio::sync::{broadcast, mpsc};
@@ -139,67 +138,4 @@ async fn start_audio_stream(
     );
 
     Ok((stream, config.sample_rate.0))
-}
-
-#[allow(dead_code)]
-pub fn normalize_volume(data: &mut [f32], target_peak: f32) -> Result<()> {
-    if data.is_empty() {
-        return Ok(());
-    }
-
-    let max_amplitude = data
-        .iter()
-        .map(|&x| x.abs())
-        .max_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
-
-    if max_amplitude == 0.0 {
-        return Ok(());
-    }
-
-    let scale_factor = target_peak / max_amplitude;
-
-    for sample in data.iter_mut() {
-        *sample *= scale_factor;
-    }
-
-    Ok(())
-}
-
-#[allow(dead_code)]
-pub fn detect_silence(data: &[f32], threshold: f32) -> Vec<(usize, usize)> {
-    let mut silence_ranges = Vec::new();
-    let mut silence_start: Option<usize> = None;
-
-    for (i, &sample) in data.iter().enumerate() {
-        if sample.abs() < threshold {
-            if silence_start.is_none() {
-                silence_start = Some(i);
-            }
-        } else if let Some(start) = silence_start {
-            silence_ranges.push((start, i));
-            silence_start = None;
-        }
-    }
-
-    if let Some(start) = silence_start {
-        silence_ranges.push((start, data.len()));
-    }
-
-    silence_ranges
-}
-
-#[allow(dead_code)]
-pub fn compute_spectrum(data: &[f32]) -> Vec<f32> {
-    let mut planner = FftPlanner::new();
-    let fft = planner.plan_fft_forward(data.len());
-
-    let mut buffer: Vec<Complex<f32>> = data.iter().map(|&x| Complex::new(x, 0.0)).collect();
-    fft.process(&mut buffer);
-
-    // We only need the first half of the spectrum due to symmetry
-    buffer[..(buffer.len() + 1) / 2]
-        .iter()
-        .map(|c| c.norm())
-        .collect()
 }

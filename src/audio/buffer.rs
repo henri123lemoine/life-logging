@@ -1,5 +1,4 @@
 use crate::audio::encoder::AudioEncoder;
-use crate::audio::processor;
 use crate::audio::visualizer::AudioVisualizer;
 use crate::error::Result;
 use std::time::Duration;
@@ -73,22 +72,5 @@ impl CircularAudioBuffer {
     pub fn visualize(&self, width: u32, height: u32) -> Vec<u8> {
         let audio_data = self.read(None);
         AudioVisualizer::create_waveform(&audio_data, width, height)
-    }
-
-    #[allow(dead_code)]
-    pub fn detect_silence(&self, threshold: f32) -> Vec<(usize, usize)> {
-        let data = self.read(None);
-        processor::detect_silence(&data, threshold)
-    }
-
-    #[allow(dead_code)]
-    pub fn compute_spectrum(&self) -> Vec<f32> {
-        let data = self.read(None);
-        processor::compute_spectrum(&data)
-    }
-
-    #[allow(dead_code)]
-    pub fn len(&self) -> usize {
-        self.capacity
     }
 }
