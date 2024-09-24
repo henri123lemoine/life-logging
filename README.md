@@ -13,6 +13,7 @@ Audio:
 - Circular buffer to store the most recent audio data.
 - API to retrieve audio data as PCM/WAV/FLAC/OPUS files.
 - Configurable buffer duration.
+- Long-term audio persistence with AWS S3.
 
 ## Getting Started
 
@@ -77,6 +78,8 @@ The application uses a flexible configuration system that supports both file-bas
 
 The default configuration is set in `config/default.toml`. To override the default configuration, add another `.toml` file to the `config` directory with your preferred settings. The server will automatically load the configuration from this file.
 
+Temporarily, AWS configuration is stored in a `.env` file. You can copy the `.env.example` file to `.env` and fill in your AWS credentials and bucket configurations.
+
 ### Logging
 
 Set the `RUST_LOG` environment variable to `info` or `debug` to see more detailed logs. Valid log levels are: `error`, `warn`, `info`, `debug`, `trace`.
@@ -95,8 +98,9 @@ This project involves continuous audio recording, which has significant privacy 
 - [ ] Long-term audio persistence
   - [x] Every `buffer_duration` seconds, store the audio buffer to disk
   - [x] Efficient compression with Opus at 32kbps
-  - [ ] Silence removal
-  - [ ] s3 persistence
+  - [x] s3 persistence
+  - [ ] Silence removal? Better compression? Switch to cheaper s3 storage?
+        *Note: the returns on further compression are very small, and storage costs are absurdly low.*
 - [ ] Transcription with whisperx
 - [ ] Audio analysis (e.g., live note detection)
 - [ ] Websocket support for real-time audio streaming
