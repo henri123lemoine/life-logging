@@ -78,23 +78,22 @@ impl DiskStorage {
     }
 
     fn resample(&self, data: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
-        // Implement resampling logic here
-        // For simplicity, we'll use linear interpolation
+        if data.is_empty() {
+            return Vec::new();
+        }
+
         let ratio = from_rate as f32 / to_rate as f32;
         let new_len = (data.len() as f32 / ratio).ceil() as usize;
         let mut resampled = Vec::with_capacity(new_len);
 
         for i in 0..new_len {
             let pos = i as f32 * ratio;
-            let index = pos.floor() as usize;
+            let index = (pos.floor() as usize).min(data.len() - 1);
+            let next_index = (index + 1).min(data.len() - 1);
             let frac = pos - pos.floor();
 
-            if index + 1 < data.len() {
-                let sample = data[index] * (1.0 - frac) + data[index + 1] * frac;
-                resampled.push(sample);
-            } else {
-                resampled.push(data[index]);
-            }
+            let sample = data[index] * (1.0 - frac) + data[next_index] * frac;
+            resampled.push(sample);
         }
 
         resampled
