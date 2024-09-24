@@ -78,6 +78,10 @@ impl DiskStorage {
     }
 
     fn resample(&self, data: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
+        if from_rate == to_rate {
+            return data.to_vec();
+        }
+
         if data.is_empty() {
             return Vec::new();
         }
@@ -104,6 +108,15 @@ impl DiskStorage {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        format!("audio_{}.{}", now, self.format)
+        let datetime = Utc.timestamp_opt(now as i64, 0).unwrap();
+
+        format!(
+            "audio/mac-audio/{year}/{month:02}/{day:02}/audio_{timestamp}.{ext}",
+            year = datetime.year(),
+            month = datetime.month(),
+            day = datetime.day(),
+            timestamp = now,
+            ext = self.format
+        )
     }
 }
