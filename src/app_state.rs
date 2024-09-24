@@ -23,12 +23,15 @@ impl AppState {
         let buffer_size =
             config.read().await.buffer_duration as usize * stream_config.sample_rate.0 as usize;
 
-        let disk_storage = Arc::new(DiskStorage::new(
-            PathBuf::from("./data/audio_storage"),
-            buffer_duration,
-            "wav".to_string(),
-            44100,
-        )?);
+        let disk_storage = Arc::new(
+            DiskStorage::new(
+                PathBuf::from("./data/audio_storage"),
+                buffer_duration,
+                "opus".to_string(),
+                48000,
+            )
+            .await?,
+        );
 
         let app_state = Arc::new(AppState {
             audio_buffer: Arc::new(RwLock::new(AudioBuffer::new(
