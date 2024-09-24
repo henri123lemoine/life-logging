@@ -1,4 +1,4 @@
-buffer_duration = 120
+buffer_duration = 1200
 
 [server]
 host = "127.0.0.1"
