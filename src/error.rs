@@ -72,6 +72,12 @@ pub enum PersistenceError {
 
     #[error("Failed to acquire read lock on audio buffer")]
     BufferLockAcquisition,
+
+    #[error("S3 config error: {0}")]
+    S3Config(String),
+
+    #[error("S3 upload error: {0}")]
+    S3Upload(String),
 }
 
 #[allow(dead_code)]
