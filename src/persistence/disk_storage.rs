@@ -1,6 +1,13 @@
 use crate::audio::buffer::AudioBuffer;
 use crate::audio::encoder::ENCODER_FACTORY;
 use crate::error::{PersistenceError, Result};
+use aws_sdk_s3::primitives::ByteStream;
+use aws_sdk_s3::types::StorageClass;
+use aws_sdk_s3::{config::Region, Client};
+use chrono::Datelike;
+use chrono::{TimeZone, Utc};
+use dotenv::dotenv;
+use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
@@ -18,7 +25,7 @@ pub struct DiskStorage {
 }
 
 impl DiskStorage {
-    pub fn new(
+    pub async fn new(
         storage_path: PathBuf,
         interval: Duration,
         format: String,
@@ -28,7 +35,6 @@ impl DiskStorage {
 
         fs::create_dir_all(&storage_path).map_err(PersistenceError::DirectoryCreation)?;
 
-        // Verify that the format is supported
         if ENCODER_FACTORY.get_encoder(&format).is_none() {
             return Err(PersistenceError::UnsupportedFormat(format).into());
         }
@@ -72,42 +78,98 @@ impl DiskStorage {
 
     pub async fn start_persistence_task(&self, audio_buffer: Arc<RwLock<AudioBuffer>>) {
         let mut interval = time::interval(self.interval);
-
         loop {
             interval.tick().await;
-            if let Err(e) = self.persist_audio(&audio_buffer).await {
+            if let Err(e) = self.persist_audio(audio_buffer.clone()).await {
                 error!("Failed to persist audio: {}", e);
             }
         }
     }
 
-    async fn persist_audio(&self, audio_buffer: &Arc<RwLock<AudioBuffer>>) -> Result<()> {
-        let buffer = audio_buffer
-            .read()
-            .map_err(|_| PersistenceError::BufferLockAcquisition)?;
-        let data = buffer.read(Some(self.interval));
-        let current_sample_rate = buffer.get_sample_rate();
+    async fn persist_audio(&self, audio_buffer: Arc<RwLock<AudioBuffer>>) -> Result<()> {
+        let data = {
+            let buffer = audio_buffer
+                .read()
+                .map_err(|_| PersistenceError::BufferLockAcquisition)?;
+            buffer.read(Some(self.interval))
+        };
 
-        // Resample if necessary
+        let current_sample_rate = {
+            let buffer = audio_buffer
+                .read()
+                .map_err(|_| PersistenceError::BufferLockAcquisition)?;
+            buffer.get_sample_rate()
+        };
+
         let resampled_data = if current_sample_rate != self.target_sample_rate {
             self.resample(&data, current_sample_rate, self.target_sample_rate)
         } else {
             data
         };
 
-        // Get the encoder instance
         let encoder = ENCODER_FACTORY
             .get_encoder(&self.format)
             .unwrap_or_else(|| panic!("Unsupported format: {}", self.format));
-
         let encoded_data = encoder.encode(&resampled_data, self.target_sample_rate)?;
 
         let filename = self.generate_filename();
-        let file_path = self.storage_path.join(filename);
-        fs::write(file_path, encoded_data).map_err(PersistenceError::FileWrite)?;
+        let file_path = self.storage_path.join(&filename);
 
-        info!("Persisted audio data to disk");
+        // Create directory structure if it doesn't exist
+        if let Some(parent) = file_path.parent() {
+            fs::create_dir_all(parent).map_err(PersistenceError::DirectoryCreation)?;
+        }
+
+        fs::write(&file_path, &encoded_data).map_err(PersistenceError::FileWrite)?;
+        info!("Persisted audio data to disk: {}", file_path.display());
+
+        if let (Some(client), Some(bucket)) = (&self.s3_client, &self.s3_bucket) {
+            self.upload_to_s3(client, bucket, &file_path, &filename)
+                .await?;
+            info!("Uploaded audio data to S3: {}", filename);
+        }
+
         Ok(())
+    }
+
+    async fn upload_to_s3(
+        &self,
+        client: &Client,
+        bucket: &str,
+        file_path: &PathBuf,
+        key: &str,
+    ) -> Result<()> {
+        let body = match ByteStream::from_path(file_path).await {
+            Ok(stream) => stream,
+            Err(e) => {
+                error!("Failed to create ByteStream from file: {:?}", e);
+                return Err(PersistenceError::S3Upload(format!(
+                    "Failed to create ByteStream: {}",
+                    e
+                ))
+                .into());
+            }
+        };
+
+        let result = client
+            .put_object()
+            .bucket(bucket)
+            .key(key)
+            .body(body)
+            .storage_class(StorageClass::GlacierIr)
+            .send()
+            .await;
+
+        match result {
+            Ok(_) => {
+                info!("Successfully uploaded file to S3: {}", key);
+                Ok(())
+            }
+            Err(e) => {
+                error!("Failed to upload file to S3: {:?}", e);
+                Err(PersistenceError::S3Upload(format!("S3 upload failed: {}", e)).into())
+            }
+        }
     }
 
     fn resample(&self, data: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
