@@ -51,8 +51,8 @@ Audio:
       ```bash
       ./run_background.sh
       ```
-      This will start the server in the background and log output to `logs/output.log`. You can run `tail -f logs/output.log` to view the logs in real time.
-      Closing: Run `ps aux | grep life-logging` to find the process ID, then run `kill <PID>` to kill the process.
+      This will start the server in the background, show you the process ID after compilation, and start logging output. You can run `tail -f logs/server.log` to follow the logs.
+      Closing: Run `kill <PID>` to kill the process. If you forget the PID, you can find it with `ps aux | grep life-logging`.
 
 The server will start on `http://127.0.0.1:61429`, or whichever port is chosen in your configuration.
 
@@ -105,6 +105,7 @@ This project involves continuous audio recording, which has significant privacy 
   - [x] s3 persistence
   - [ ] Silence removal? Better compression? Switch to cheaper s3 storage?
         *Note: the returns on further compression are very small, and storage costs are absurdly low.*
+  - [ ] Remove +1d old local files.
 - [ ] Transcription with whisperx
 - [ ] Audio analysis (e.g., live note detection)
 - [ ] Websocket support for real-time audio streaming
