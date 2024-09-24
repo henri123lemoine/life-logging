@@ -43,8 +43,12 @@ Audio:
       ```
       To close the server, press `Ctrl+C`.
    - To run the server in the background:
+      Make the script executable (first time only):
       ```bash
-      chmod +x run_background.sh  # Make the script executable (first time only)
+      chmod +x run_background.sh
+      ```
+      Run the script:
+      ```bash
       ./run_background.sh
       ```
       This will start the server in the background and log output to `logs/output.log`. You can run `tail -f logs/output.log` to view the logs in real time.
