@@ -8,6 +8,8 @@ license = "MIT"
 repository = "https://github.com/henri123lemoine/life-logging"
 
 [dependencies]
+aws-config = "1.5.6"
+aws-sdk-s3 = "1.51.0"
 axum = "0.7.6"
 axum-server = "0.7.1"
 config = "0.14.0"
