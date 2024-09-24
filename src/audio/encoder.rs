@@ -154,7 +154,15 @@ impl AudioEncoder for FlacEncoder {
     }
 }
 
-pub struct OpusEncoder;
+pub struct OpusEncoder {
+    bitrate: u32,
+}
+
+impl OpusEncoder {
+    pub fn new(bitrate: u32) -> Self {
+        OpusEncoder { bitrate }
+    }
+}
 
 impl AudioEncoder for OpusEncoder {
     fn encode(&self, data: &[f32], sample_rate: u32) -> Result<Vec<u8>> {
@@ -176,7 +184,7 @@ impl AudioEncoder for OpusEncoder {
             .arg("-c:a")
             .arg("libopus")
             .arg("-b:a")
-            .arg("32k") // 32 kbps
+            .arg(format!("{}k", self.bitrate))
             .arg("-f")
             .arg("opus")
             .arg("-")
@@ -193,9 +201,10 @@ impl AudioEncoder for OpusEncoder {
         }
 
         info!(
-            "Encoded {} samples into {} bytes of Opus data",
+            "Encoded {} samples into {} bytes of Opus data at {}kbps",
             data.len(),
-            output.stdout.len()
+            output.stdout.len(),
+            self.bitrate
         );
         Ok(output.stdout)
     }
@@ -213,33 +222,48 @@ impl AudioEncoder for OpusEncoder {
     }
 }
 
-pub static ENCODER_FACTORY: Lazy<EncoderFactory> = Lazy::new(|| {
-    let mut encoders = HashMap::new();
-    encoders.insert(
-        "pcm".to_string(),
-        Box::new(PcmEncoder) as Box<dyn AudioEncoder>,
-    );
-    encoders.insert(
-        "wav".to_string(),
-        Box::new(WavEncoder) as Box<dyn AudioEncoder>,
-    );
-    encoders.insert(
-        "flac".to_string(),
-        Box::new(FlacEncoder) as Box<dyn AudioEncoder>,
-    );
-    encoders.insert(
-        "opus".to_string(),
-        Box::new(OpusEncoder) as Box<dyn AudioEncoder>,
-    );
-    EncoderFactory { encoders }
-});
-
 pub struct EncoderFactory {
     encoders: HashMap<String, Box<dyn AudioEncoder>>,
 }
 
+impl Default for EncoderFactory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EncoderFactory {
+    pub fn new() -> Self {
+        let mut encoders = HashMap::new();
+        encoders.insert(
+            "pcm".to_string(),
+            Box::new(PcmEncoder) as Box<dyn AudioEncoder>,
+        );
+        encoders.insert(
+            "wav".to_string(),
+            Box::new(WavEncoder) as Box<dyn AudioEncoder>,
+        );
+        encoders.insert(
+            "flac".to_string(),
+            Box::new(FlacEncoder) as Box<dyn AudioEncoder>,
+        );
+        encoders.insert(
+            "opus".to_string(),
+            Box::new(OpusEncoder::new(32)) as Box<dyn AudioEncoder>, // Default to 32kbps
+        );
+        EncoderFactory { encoders }
+    }
+
     pub fn get_encoder(&self, format: &str) -> Option<&dyn AudioEncoder> {
         self.encoders.get(format).map(|boxed| boxed.as_ref())
     }
+
+    pub fn set_opus_bitrate(&mut self, bitrate: u32) {
+        self.encoders.insert(
+            "opus".to_string(),
+            Box::new(OpusEncoder::new(bitrate)) as Box<dyn AudioEncoder>,
+        );
+    }
 }
+
+pub static ENCODER_FACTORY: Lazy<EncoderFactory> = Lazy::new(EncoderFactory::default);
