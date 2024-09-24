@@ -11,8 +11,8 @@ Audio:
 
 - Continuous audio recording.
 - Circular buffer to store the most recent audio data.
-- API to retrieve audio data as PCM/WAV/FLAC files.
-- Configurable buffer size and sample rate.
+- API to retrieve audio data as PCM/WAV/FLAC/OPUS files.
+- Configurable buffer duration.
 
 ## Getting Started
 
@@ -55,9 +55,8 @@ The server will start on `http://127.0.0.1:61429`, or whichever port is chosen i
 
 - **Get Audio**: `GET /get_audio` - Returns the most recent audio data. Query parameters:
   - `format`: The audio format to return. Supported formats are `pcm`, `wav`, `flac`, and `opus`. Default is `wav`.
-  - `duration`: The duration of audio to return, in seconds. Default is the entire buffer.
+  - `duration`: The duration of audio to return, in seconds. Default is the entire buffer, namely 20 minutes.
 - **Visualize Audio**: `GET /visualize_audio` - Returns a PNG image visualizing the recent audio data. Useful for debugging.
-- **Health Check**: `GET /health` - Returns the server's health status.
 
 Run the app and visit `http://localhost:61429/swagger-ui/` to view the full API documentation.
 
@@ -65,7 +64,7 @@ Run the app and visit `http://localhost:61429/swagger-ui/` to view the full API 
 
 Retrieve the last minute of audio in WAV format:
 ```bash
-curl "http://127.0.0.1:61429/get_audio?format=wav" --output recent_audio.wav
+curl "http://127.0.0.1:61429/get_audio?format=wav&duration=60" --output recent_audio.wav
 ```
 
 Visualize recent audio data: Go to `http://127.0.0.1:61429/visualize_audio` in your browser.
@@ -76,32 +75,11 @@ The application uses a flexible configuration system that supports both file-bas
 
 ### Configuration File
 
-The default configuration is set in config/default.toml. This file should contain your base configuration:
-
-```toml
-buffer_duration = 120
-
-[server]
-host = "127.0.0.1"
-port = 61429
-```
-
-To override the default configuration, add a `.toml` file to the `config` directory with your preferred settings. The server will automatically load the configuration from this file.
-
-### Environment Variables
-
-You can override any file-configured value using environment variables. The format is:
-```bash
-LIFELOGGING__<SECTION>__<KEY>=<VALUE>
-```
-For example:
-
-- To change the buffer duration: LIFELOGGING__BUFFER_DURATION=120
-- To change the server port: LIFELOGGING__SERVER__PORT=8080
+The default configuration is set in `config/default.toml`. To override the default configuration, add another `.toml` file to the `config` directory with your preferred settings. The server will automatically load the configuration from this file.
 
 ### Logging
 
-Set the `RUST_LOG` environment variable to `info` or `debug` to see more detailed logs. Valid log levels are: error, warn, info, debug, trace.
+Set the `RUST_LOG` environment variable to `info` or `debug` to see more detailed logs. Valid log levels are: `error`, `warn`, `info`, `debug`, `trace`.
 
 ## Security Considerations
 
@@ -115,9 +93,10 @@ This project involves continuous audio recording, which has significant privacy 
 ## Future Improvements
 
 - [ ] Long-term audio persistence
-  - [x] Every `n` seconds, store the audio buffer to disk
-  - [ ] Efficient compression with Opus at 32kbps and silence removal
-  - [ ] Implement s3 persistence
+  - [x] Every `buffer_duration` seconds, store the audio buffer to disk
+  - [x] Efficient compression with Opus at 32kbps
+  - [ ] Silence removal
+  - [ ] s3 persistence
 - [ ] Transcription with whisperx
 - [ ] Audio analysis (e.g., live note detection)
 - [ ] Websocket support for real-time audio streaming
