@@ -13,6 +13,8 @@ pub struct DiskStorage {
     interval: Duration,
     format: String,
     target_sample_rate: u32,
+    s3_client: Option<Client>,
+    s3_bucket: Option<String>,
 }
 
 impl DiskStorage {
@@ -22,6 +24,8 @@ impl DiskStorage {
         format: String,
         target_sample_rate: u32,
     ) -> Result<Self> {
+        dotenv().ok();
+
         fs::create_dir_all(&storage_path).map_err(PersistenceError::DirectoryCreation)?;
 
         // Verify that the format is supported
@@ -29,11 +33,40 @@ impl DiskStorage {
             return Err(PersistenceError::UnsupportedFormat(format).into());
         }
 
+        let s3_bucket = env::var("AWS_S3_BUCKET").ok();
+        let s3_region = env::var("AWS_REGION").ok();
+
+        let s3_client = if let (Some(_), Some(region)) = (s3_bucket.as_ref(), s3_region.as_ref()) {
+            let aws_access_key_id = env::var("AWS_ACCESS_KEY_ID")
+                .map_err(|_| PersistenceError::S3Config("AWS_ACCESS_KEY_ID not set".to_string()))?;
+            let aws_secret_access_key = env::var("AWS_SECRET_ACCESS_KEY").map_err(|_| {
+                PersistenceError::S3Config("AWS_SECRET_ACCESS_KEY not set".to_string())
+            })?;
+
+            let config = aws_config::defaults(aws_config::BehaviorVersion::v2024_03_28())
+                .region(Region::new(region.clone()))
+                .credentials_provider(aws_sdk_s3::config::Credentials::new(
+                    aws_access_key_id,
+                    aws_secret_access_key,
+                    None,
+                    None,
+                    "env",
+                ))
+                .load()
+                .await;
+
+            Some(Client::new(&config))
+        } else {
+            None
+        };
+
         Ok(Self {
             storage_path,
             interval,
             format,
             target_sample_rate,
+            s3_client,
+            s3_bucket,
         })
     }
 
