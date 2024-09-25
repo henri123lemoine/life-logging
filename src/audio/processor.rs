@@ -4,9 +4,9 @@ use crate::config::CONFIG_MANAGER;
 use crate::error::{AudioError, Result};
 use cpal::traits::{DeviceTrait, StreamTrait};
 use cpal::Stream;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, RwLock};
 use tokio::task;
 use tracing::{error, info, instrument, warn};
 
