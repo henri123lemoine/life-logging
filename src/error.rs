@@ -70,6 +70,9 @@ pub enum PersistenceError {
     #[error("Failed to write audio data: {0}")]
     FileWrite(io::Error),
 
+    #[error("File cleanup error: {0}")]
+    FileCleanup(String),
+
     #[error("Failed to acquire read lock on audio buffer")]
     BufferLockAcquisition,
 
