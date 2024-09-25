@@ -7,25 +7,22 @@ use cpal::Stream;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{broadcast, mpsc, RwLock};
-use tokio::task;
 use tracing::{error, info, instrument, warn};
 
 #[instrument(skip(app_state))]
-pub async fn setup_audio_processing(app_state: &Arc<AppState>) -> Result<()> {
+pub async fn setup_audio_processing(app_state: Arc<AppState>) -> Result<()> {
     info!("Setting up audio processing");
 
     let audio_sender = app_state.audio_sender.clone();
+    let audio_buffer = app_state.audio_buffer.clone();
 
-    tokio::spawn({
-        let audio_buffer = app_state.audio_buffer.clone();
+    tokio::spawn(async move {
         let mut audio_receiver = audio_sender.subscribe();
-        async move {
-            audio_processing_task(audio_buffer, &mut audio_receiver).await;
-        }
+        audio_processing_task(audio_buffer, &mut audio_receiver).await;
     });
 
     let app_state_clone = app_state.clone();
-    task::spawn_blocking(move || {
+    std::thread::spawn(move || {
         audio_stream_management_task(app_state_clone);
     });
 
@@ -39,16 +36,9 @@ async fn audio_processing_task(
 ) {
     info!("Starting audio processing task");
 
-    loop {
-        tokio::select! {
-            result = audio_receiver.recv() => {
-                if let Ok(data) = result {
-                    let mut buffer = audio_buffer.write().await;
-                    buffer.write(&data);
-                    // buffer.write_fast(&data);
-                }
-            }
-        }
+    while let Ok(data) = audio_receiver.recv().await {
+        let mut buffer = audio_buffer.write().await;
+        buffer.write(&data);
     }
 }
 
@@ -56,46 +46,39 @@ async fn audio_processing_task(
 fn audio_stream_management_task(app_state: Arc<AppState>) {
     info!("Starting audio stream management task");
 
+    let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+
     loop {
         let (tx, mut rx) = mpsc::channel::<()>(1);
-        let stream = match task::block_in_place(|| {
-            tokio::runtime::Runtime::new()
-                .unwrap()
-                .block_on(async { start_audio_stream(&app_state, tx).await })
-        }) {
+        match rt.block_on(start_audio_stream(&app_state, tx)) {
             Ok((stream, new_sample_rate)) => {
-                let mut audio_buffer = task::block_in_place(|| {
-                    tokio::runtime::Runtime::new()
-                        .unwrap()
-                        .block_on(async { app_state.audio_buffer.write().await })
+                rt.block_on(async {
+                    let mut audio_buffer = app_state.audio_buffer.write().await;
+                    if let Err(e) = audio_buffer.update_sample_rate(new_sample_rate) {
+                        error!("Failed to update sample rate: {}", e)
+                    }
                 });
-                if let Err(e) = audio_buffer.update_sample_rate(new_sample_rate) {
-                    error!("Failed to update sample rate: {}", e);
+
+                info!("Audio stream started successfully");
+
+                if let Err(e) = stream.play() {
+                    error!("Failed to play audio stream: {}", e);
+                    std::thread::sleep(std::time::Duration::from_secs(5));
                     continue;
                 }
-                stream
+
+                // Wait for the stream to end or for an error
+                rt.block_on(async { rx.recv().await });
             }
             Err(e) => {
                 error!("Failed to start audio stream: {}", e);
-                std::thread::sleep(Duration::from_secs(5));
+                std::thread::sleep(std::time::Duration::from_secs(5));
                 continue;
             }
-        };
-
-        info!("Audio stream started successfully");
-
-        // Play the stream
-        if let Err(e) = stream.play() {
-            error!("Failed to play audio stream: {}", e);
-            std::thread::sleep(Duration::from_secs(5));
-            continue;
         }
 
-        // Wait for the stream to end or for an error
-        rx.blocking_recv();
-
         warn!("Audio stream ended, attempting to restart");
-        std::thread::sleep(Duration::from_secs(1));
+        std::thread::sleep(std::time::Duration::from_secs(1));
     }
 }
 
