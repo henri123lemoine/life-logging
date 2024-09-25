@@ -4,14 +4,15 @@ use crate::error::{PersistenceError, Result};
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::types::StorageClass;
 use aws_sdk_s3::{config::Region, Client};
-use chrono::Datelike;
-use chrono::{TimeZone, Utc};
+use chrono::Utc;
+use chrono::{Datelike, Timelike};
 use dotenv::dotenv;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
+use std::time::SystemTime;
 use tokio::time;
 use tracing::{error, info};
 
@@ -199,18 +200,14 @@ impl DiskStorage {
     }
 
     fn generate_filename(&self) -> String {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let datetime = Utc.timestamp_opt(now as i64, 0).unwrap();
-
+        let now = Utc::now();
         format!(
-            "audio/mac-audio/{year}/{month:02}/{day:02}/audio_{timestamp}.{ext}",
-            year = datetime.year(),
-            month = datetime.month(),
-            day = datetime.day(),
-            timestamp = now,
+            "audio/mac-audio/{year}/{month:02}/{day:02}/audio_{hour:02}_{minute:02}.{ext}",
+            year = now.year(),
+            month = now.month(),
+            day = now.day(),
+            hour = now.hour(),
+            minute = now.minute(),
             ext = self.format
         )
     }
