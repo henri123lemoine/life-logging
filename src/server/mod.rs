@@ -7,7 +7,7 @@ use crate::error::{Result, ServerError};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-pub async fn run_server(app_state: &Arc<AppState>) -> Result<()> {
+pub async fn run_server(app_state: Arc<AppState>) -> Result<()> {
     let app: axum::Router = routes::create_router(app_state.clone());
 
     let config = CONFIG_MANAGER.get_config().await;

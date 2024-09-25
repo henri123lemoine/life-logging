@@ -10,7 +10,10 @@ async fn main() -> Result<()> {
     tracing::info!("Starting Life-Logging audio recording service");
 
     let app_state = Arc::new(AppState::new().await?);
-    processor::setup_audio_processing(&app_state).await?;
+
+    // Setup audio processing
+    let audio_processor_app_state = app_state.clone();
+    processor::setup_audio_processing(audio_processor_app_state).await?;
 
     // Start the persistence task
     let persistence_app_state = app_state.clone();
@@ -20,6 +23,9 @@ async fn main() -> Result<()> {
         disk_storage.start_persistence_task(audio_buffer).await;
     });
 
-    server::run_server(&app_state).await?;
+    // Start the server
+    let server_app_state = app_state.clone();
+    server::run_server(server_app_state).await?;
+
     Ok(())
 }
