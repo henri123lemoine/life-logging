@@ -231,7 +231,7 @@ impl DiskStorage {
     }
 
     async fn cleanup_old_local_files(&self, local_files: &mut VecDeque<(DateTime<Utc>, PathBuf)>) {
-        let five_hours_ago = Utc::now() - Duration::from_secs(60 * 5);
+        let five_hours_ago = Utc::now() - Duration::from_secs(60 * 60 * 5);
         // let five_hours_ago = Utc::now() - Duration::from_secs(60 * 60 * 5);
         while let Some((timestamp, path)) = local_files.front() {
             if *timestamp < five_hours_ago {
