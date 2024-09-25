@@ -4,37 +4,41 @@ use crate::error::{PersistenceError, Result};
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::types::StorageClass;
 use aws_sdk_s3::{config::Region, Client};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use chrono::{Datelike, Timelike};
 use dotenv::dotenv;
-use std::env;
-use std::fs;
+use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::Duration;
-use std::time::SystemTime;
+use std::{env, fs};
+use tokio::sync::Mutex;
+use tokio::sync::RwLock as TokioRwLock;
 use tokio::time;
 use tracing::{error, info};
 
 pub struct DiskStorage {
-    storage_path: PathBuf,
+    local_storage_path: PathBuf,
+    s3_storage_path: String,
     interval: Duration,
     format: String,
     target_sample_rate: u32,
     s3_client: Option<Client>,
     s3_bucket: Option<String>,
+    local_files: Mutex<VecDeque<(DateTime<Utc>, PathBuf)>>,
 }
 
 impl DiskStorage {
     pub async fn new(
-        storage_path: PathBuf,
+        local_storage_path: PathBuf,
+        s3_storage_path: String,
         interval: Duration,
         format: String,
         target_sample_rate: u32,
     ) -> Result<Self> {
         dotenv().ok();
 
-        fs::create_dir_all(&storage_path).map_err(PersistenceError::DirectoryCreation)?;
+        fs::create_dir_all(&local_storage_path).map_err(PersistenceError::DirectoryCreation)?;
 
         if ENCODER_FACTORY.get_encoder(&format).is_none() {
             return Err(PersistenceError::UnsupportedFormat(format).into());
@@ -68,16 +72,21 @@ impl DiskStorage {
         };
 
         Ok(Self {
-            storage_path,
+            local_storage_path,
+            s3_storage_path,
             interval,
             format,
             target_sample_rate,
             s3_client,
             s3_bucket,
+            local_files: Mutex::new(VecDeque::new()),
         })
     }
 
-    pub async fn start_persistence_task(&self, audio_buffer: Arc<RwLock<AudioBuffer>>) {
+    pub async fn start_persistence_task(
+        self: Arc<Self>,
+        audio_buffer: Arc<TokioRwLock<AudioBuffer>>,
+    ) {
         let mut interval = time::interval(self.interval);
         loop {
             interval.tick().await;
@@ -87,18 +96,14 @@ impl DiskStorage {
         }
     }
 
-    async fn persist_audio(&self, audio_buffer: Arc<RwLock<AudioBuffer>>) -> Result<()> {
+    async fn persist_audio(&self, audio_buffer: Arc<TokioRwLock<AudioBuffer>>) -> Result<()> {
         let data = {
-            let buffer = audio_buffer
-                .read()
-                .map_err(|_| PersistenceError::BufferLockAcquisition)?;
+            let buffer = audio_buffer.read().await;
             buffer.read(Some(self.interval))
         };
 
         let current_sample_rate = {
-            let buffer = audio_buffer
-                .read()
-                .map_err(|_| PersistenceError::BufferLockAcquisition)?;
+            let buffer = audio_buffer.read().await;
             buffer.get_sample_rate()
         };
 
@@ -113,21 +118,26 @@ impl DiskStorage {
             .unwrap_or_else(|| panic!("Unsupported format: {}", self.format));
         let encoded_data = encoder.encode(&resampled_data, self.target_sample_rate)?;
 
-        let filename = self.generate_filename();
-        let file_path = self.storage_path.join(&filename);
+        let now = Utc::now();
+        let local_filename = self.generate_local_filename(&now);
+        let s3_filename = self.generate_s3_filename(&now);
 
-        // Create directory structure if it doesn't exist
-        if let Some(parent) = file_path.parent() {
-            fs::create_dir_all(parent).map_err(PersistenceError::DirectoryCreation)?;
-        }
+        let local_file_path = self.local_storage_path.join(&local_filename);
+        fs::write(&local_file_path, &encoded_data).map_err(PersistenceError::FileWrite)?;
+        info!(
+            "Persisted audio data to local disk: {}",
+            local_file_path.display()
+        );
 
-        fs::write(&file_path, &encoded_data).map_err(PersistenceError::FileWrite)?;
-        info!("Persisted audio data to disk: {}", file_path.display());
+        let mut local_files = self.local_files.lock().await;
+        local_files.push_back((now, local_file_path.clone()));
+        self.cleanup_old_local_files(&mut local_files).await;
 
         if let (Some(client), Some(bucket)) = (&self.s3_client, &self.s3_bucket) {
-            self.upload_to_s3(client, bucket, &file_path, &filename)
+            let s3_key = format!("{}/{}", self.s3_storage_path, s3_filename);
+            self.upload_to_s3(client, bucket, &local_file_path, &s3_key)
                 .await?;
-            info!("Uploaded audio data to S3: {}", filename);
+            info!("Uploaded audio data to S3: {}", s3_key);
         }
 
         Ok(())
@@ -199,59 +209,41 @@ impl DiskStorage {
         resampled
     }
 
-    fn generate_filename(&self) -> String {
-        let now = Utc::now();
+    fn generate_local_filename(&self, datetime: &DateTime<Utc>) -> String {
         format!(
-            "audio/mac-audio/{year}/{month:02}/{day:02}/audio_{hour:02}_{minute:02}.{ext}",
-            year = now.year(),
-            month = now.month(),
-            day = now.day(),
-            hour = now.hour(),
-            minute = now.minute(),
+            "audio_{hour:02}_{minute:02}.{ext}",
+            hour = datetime.hour(),
+            minute = datetime.minute(),
             ext = self.format
         )
     }
 
-    pub async fn start_cleanup_task(&self, cleanup_interval: Duration, max_age: Duration) {
-        let mut interval = time::interval(cleanup_interval);
-        loop {
-            interval.tick().await;
-            if let Err(e) = self.cleanup_old_files(max_age).await {
-                error!("Failed to clean up old files: {}", e);
-            }
-        }
+    fn generate_s3_filename(&self, datetime: &DateTime<Utc>) -> String {
+        format!(
+            "{year}/{month:02}/{day:02}/audio_{hour:02}_{minute:02}.{ext}",
+            year = datetime.year(),
+            month = datetime.month(),
+            day = datetime.day(),
+            hour = datetime.hour(),
+            minute = datetime.minute(),
+            ext = self.format
+        )
     }
 
-    async fn cleanup_old_files(&self, max_age: Duration) -> Result<()> {
-        let now = SystemTime::now();
-        let mut files_removed = 0;
-        let mut errors_encountered = 0;
-
-        for entry in fs::read_dir(&self.storage_path)? {
-            let entry = entry?;
-            let metadata = entry.metadata()?;
-            if metadata.is_file() {
-                if let Ok(created) = metadata.created() {
-                    match now.duration_since(created) {
-                        Ok(age) if age > max_age => {
-                            fs::remove_file(entry.path())?;
-                            info!("Removed old file: {:?}", entry.path());
-                            files_removed += 1;
-                        }
-                        Err(e) => {
-                            error!("Error determining file age for {:?}: {}", entry.path(), e);
-                            errors_encountered += 1;
-                        }
-                        _ => {} // File is not old enough to be deleted
-                    }
+    async fn cleanup_old_local_files(&self, local_files: &mut VecDeque<(DateTime<Utc>, PathBuf)>) {
+        let five_hours_ago = Utc::now() - Duration::from_secs(60 * 5);
+        // let five_hours_ago = Utc::now() - Duration::from_secs(60 * 60 * 5);
+        while let Some((timestamp, path)) = local_files.front() {
+            if *timestamp < five_hours_ago {
+                if let Err(e) = fs::remove_file(path) {
+                    error!("Failed to remove old local file: {:?}. Error: {}", path, e);
+                } else {
+                    info!("Removed old local file: {:?}", path);
                 }
+                local_files.pop_front();
+            } else {
+                break;
             }
         }
-
-        info!(
-            "Cleanup completed. Removed {} files. Encountered {} errors.",
-            files_removed, errors_encountered
-        );
-        Ok(())
     }
 }
