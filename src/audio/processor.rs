@@ -1,7 +1,7 @@
 use crate::app_state::AppState;
 use crate::audio::buffer::AudioBuffer;
 use crate::config::CONFIG_MANAGER;
-use crate::error::{AudioError, Result};
+use crate::error::Result;
 use cpal::traits::{DeviceTrait, StreamTrait};
 use cpal::Stream;
 use std::sync::Arc;
@@ -14,11 +14,10 @@ use tracing::{error, info, instrument, warn};
 pub async fn setup_audio_processing(app_state: &Arc<AppState>) -> Result<()> {
     info!("Setting up audio processing");
 
-    let audio_buffer = app_state.audio_buffer.clone();
     let audio_sender = app_state.audio_sender.clone();
 
     tokio::spawn({
-        let audio_buffer = audio_buffer.clone();
+        let audio_buffer = app_state.audio_buffer.clone();
         let mut audio_receiver = audio_sender.subscribe();
         async move {
             audio_processing_task(audio_buffer, &mut audio_receiver).await;
@@ -44,7 +43,7 @@ async fn audio_processing_task(
         tokio::select! {
             result = audio_receiver.recv() => {
                 if let Ok(data) = result {
-                    let mut buffer = audio_buffer.write().unwrap();
+                    let mut buffer = audio_buffer.write().await;
                     buffer.write(&data);
                     // buffer.write_fast(&data);
                 }
@@ -65,16 +64,15 @@ fn audio_stream_management_task(app_state: Arc<AppState>) {
                 .block_on(async { start_audio_stream(&app_state, tx).await })
         }) {
             Ok((stream, new_sample_rate)) => {
-                let mut audio_buffer = app_state
-                    .audio_buffer
-                    .write()
-                    .map_err(|_| {
-                        AudioError::Device(
-                            "Failed to acquire write lock on audio buffer".to_string(),
-                        )
-                    })
-                    .unwrap();
-                audio_buffer.update_sample_rate(new_sample_rate).unwrap();
+                let mut audio_buffer = task::block_in_place(|| {
+                    tokio::runtime::Runtime::new()
+                        .unwrap()
+                        .block_on(async { app_state.audio_buffer.write().await })
+                });
+                if let Err(e) = audio_buffer.update_sample_rate(new_sample_rate) {
+                    error!("Failed to update sample rate: {}", e);
+                    continue;
+                }
                 stream
             }
             Err(e) => {

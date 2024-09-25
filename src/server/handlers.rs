@@ -38,7 +38,7 @@ pub async fn test(State(state): State<Arc<AppState>>) -> Json<serde_json::Value>
     info!("Testing endpoint. Used for development purposes only.");
 
     let buffer_len = {
-        let audio_buffer = state.audio_buffer.read().unwrap();
+        let audio_buffer = state.audio_buffer.read().await;
         let buffer = audio_buffer.read(None);
         buffer.len()
     }; // ^^ 5ms
@@ -102,7 +102,7 @@ async fn encode_and_respond(
     encoder: &dyn AudioEncoder,
     duration: Option<Duration>,
 ) -> Response {
-    let audio_buffer = state.audio_buffer.read().unwrap();
+    let audio_buffer = state.audio_buffer.read().await;
     let data = audio_buffer.read(duration);
     let sample_rate = audio_buffer.get_sample_rate();
     match encoder.encode(&data, sample_rate) {
@@ -143,7 +143,7 @@ pub async fn visualize_audio(State(state): State<Arc<AppState>>) -> impl IntoRes
     let width = 800;
     let height = 400;
     let duration: Option<Duration> = Some(Duration::from_secs(30));
-    let audio_buffer = state.audio_buffer.read().unwrap();
+    let audio_buffer = state.audio_buffer.read().await;
     let image_data = AudioVisualizer::create_waveform(&audio_buffer.read(duration), width, height);
 
     (
