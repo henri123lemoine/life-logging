@@ -26,6 +26,7 @@ impl AppState {
         let disk_storage = Arc::new(
             DiskStorage::new(
                 PathBuf::from("./data/audio_storage"),
+                "audio/mac".to_string(), // S3 storage path
                 buffer_duration,
                 "opus".to_string(),
                 48000,
