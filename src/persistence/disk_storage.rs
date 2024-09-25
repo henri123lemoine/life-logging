@@ -211,4 +211,47 @@ impl DiskStorage {
             ext = self.format
         )
     }
+
+    pub async fn start_cleanup_task(&self, cleanup_interval: Duration, max_age: Duration) {
+        let mut interval = time::interval(cleanup_interval);
+        loop {
+            interval.tick().await;
+            if let Err(e) = self.cleanup_old_files(max_age).await {
+                error!("Failed to clean up old files: {}", e);
+            }
+        }
+    }
+
+    async fn cleanup_old_files(&self, max_age: Duration) -> Result<()> {
+        let now = SystemTime::now();
+        let mut files_removed = 0;
+        let mut errors_encountered = 0;
+
+        for entry in fs::read_dir(&self.storage_path)? {
+            let entry = entry?;
+            let metadata = entry.metadata()?;
+            if metadata.is_file() {
+                if let Ok(created) = metadata.created() {
+                    match now.duration_since(created) {
+                        Ok(age) if age > max_age => {
+                            fs::remove_file(entry.path())?;
+                            info!("Removed old file: {:?}", entry.path());
+                            files_removed += 1;
+                        }
+                        Err(e) => {
+                            error!("Error determining file age for {:?}: {}", entry.path(), e);
+                            errors_encountered += 1;
+                        }
+                        _ => {} // File is not old enough to be deleted
+                    }
+                }
+            }
+        }
+
+        info!(
+            "Cleanup completed. Removed {} files. Encountered {} errors.",
+            files_removed, errors_encountered
+        );
+        Ok(())
+    }
 }
