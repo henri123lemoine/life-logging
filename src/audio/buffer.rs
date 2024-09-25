@@ -27,7 +27,6 @@ impl<T: Copy + Default> CircularBuffer<T> {
         }
     }
 
-    // write            time:   [656.94 ns 658.54 ns 660.66 ns]
     pub fn write(&mut self, data: &[T]) {
         let data_len = data.len();
 
@@ -39,7 +38,7 @@ impl<T: Copy + Default> CircularBuffer<T> {
         self.write_position = (self.write_position + data_len) % self.capacity;
     }
 
-    // write fast         time:   [55.758 ns 56.001 ns 56.263 ns] !!
+    // See benches for performance comparison
     pub fn write_fast(&mut self, data: &[T]) {
         let data_len = data.len();
         let remaining_space = self.capacity - self.write_position;
@@ -83,6 +82,7 @@ impl<T: Copy + Default> CircularBuffer<T> {
         }
     }
 
+    #[allow(dead_code)]
     fn update_capacity(&mut self, new_capacity: usize) {
         let mut new_buffer = vec![T::default(); new_capacity];
         let count = self.capacity.min(new_capacity);
@@ -108,7 +108,7 @@ pub struct AudioBuffer {
 }
 
 impl AudioBuffer {
-    pub fn new(capacity: usize, sample_rate: u32) -> Self {
+    pub fn new(capacity: usize, sample_rate: u32) -> AudioBuffer {
         info!(
             "Creating new AudioBuffer with capacity {} and sample rate {}",
             capacity, sample_rate
@@ -153,14 +153,18 @@ impl AudioBuffer {
             .map(|i| {
                 let old_index = i as f32 * self.sample_rate as f32 / new_sample_rate as f32;
                 let old_index_floor = old_index.floor() as usize;
-                let old_index_ceil = (old_index.ceil() as usize).min(old_data.len() - 1);
+                let old_index_ceil = old_index.ceil() as usize;
                 let frac = old_index - old_index.floor();
 
-                old_data[old_index_floor] * (1.0 - frac) + old_data[old_index_ceil] * frac
+                if old_index_ceil >= old_data.len() {
+                    old_data[old_index_floor]
+                } else {
+                    old_data[old_index_floor] * (1.0 - frac) + old_data[old_index_ceil] * frac
+                }
             })
             .collect();
 
-        self.buffer.update_capacity(new_capacity);
+        self.buffer = CircularBuffer::new(new_capacity);
         self.buffer.write(&new_data);
         self.sample_rate = new_sample_rate;
 
