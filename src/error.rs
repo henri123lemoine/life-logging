@@ -44,6 +44,9 @@ pub enum AudioError {
 
     #[error("Device name error: {0}")]
     DeviceName(#[from] cpal::DeviceNameError),
+
+    #[error("Failed to acquire read lock on audio buffer")]
+    BufferLockAcquisition,
 }
 
 #[allow(dead_code)]
