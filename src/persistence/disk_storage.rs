@@ -1,6 +1,7 @@
 use crate::audio::buffer::AudioBuffer;
 use crate::audio::encoder::ENCODER_FACTORY;
-use crate::error::{PersistenceError, Result};
+use crate::error::PersistenceError;
+use crate::prelude::*;
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::types::StorageClass;
 use aws_sdk_s3::{config::Region, Client};

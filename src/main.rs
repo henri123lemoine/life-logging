@@ -1,7 +1,15 @@
-use life_logging::app_state::AppState;
-use life_logging::audio::processor;
-use life_logging::error::Result;
-use life_logging::server;
+use crate::prelude::*;
+
+mod app_state;
+mod audio;
+mod config;
+mod error;
+mod persistence;
+mod prelude;
+mod server;
+
+use app_state::AppState;
+use audio::processor;
 use std::sync::Arc;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]

@@ -1,4 +1,5 @@
-use crate::error::{AudioError, Result};
+use crate::error::AudioError;
+use crate::prelude::*;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::io::Write;

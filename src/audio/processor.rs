@@ -1,7 +1,7 @@
 use crate::app_state::AppState;
 use crate::audio::buffer::AudioBuffer;
 use crate::config::CONFIG_MANAGER;
-use crate::error::Result;
+use crate::prelude::*;
 use cpal::traits::{DeviceTrait, StreamTrait};
 use cpal::Stream;
 use std::sync::Arc;

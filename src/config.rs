@@ -1,4 +1,5 @@
-use crate::error::{AudioError, ConfigError, Result};
+use crate::error::{AudioError, ConfigError};
+use crate::prelude::*;
 use config::{Config as ConfigSource, Environment, File};
 use cpal::traits::{DeviceTrait, HostTrait};
 use cpal::StreamConfig;

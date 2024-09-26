@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::prelude::*;
 use std::ptr;
 use std::time::Duration;
 use tracing::info;

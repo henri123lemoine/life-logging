@@ -1,16 +1,15 @@
 use std::io;
-use thiserror::Error;
 
-#[derive(Error, Debug)]
-pub enum LifeLoggingError {
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error(transparent)]
+    IO(#[from] std::io::Error),
+
     #[error("Audio error: {0}")]
     Audio(#[from] AudioError),
 
     #[error("Configuration error: {0}")]
     Config(#[from] ConfigError),
-
-    #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
 
     #[error("Persistence error: {0}")]
     Persistence(#[from] PersistenceError),
@@ -19,7 +18,7 @@ pub enum LifeLoggingError {
     Server(#[from] ServerError),
 }
 
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum AudioError {
     #[error("Audio device error: {0}")]
     Device(String),
@@ -49,8 +48,7 @@ pub enum AudioError {
     BufferLockAcquisition,
 }
 
-#[allow(dead_code)]
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum ConfigError {
     #[error("Configuration file error: {0}")]
     File(String),
@@ -62,7 +60,7 @@ pub enum ConfigError {
     InvalidValue(String),
 }
 
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum PersistenceError {
     #[error("Failed to create storage directory: {0}")]
     DirectoryCreation(io::Error),
@@ -86,8 +84,7 @@ pub enum PersistenceError {
     S3Upload(String),
 }
 
-#[allow(dead_code)]
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum ServerError {
     #[error("Server initialization error: {0}")]
     Init(String),
@@ -96,34 +93,32 @@ pub enum ServerError {
     RouteHandler(String),
 }
 
-pub type Result<T> = std::result::Result<T, LifeLoggingError>;
-
-impl From<cpal::DevicesError> for LifeLoggingError {
+impl From<cpal::DevicesError> for Error {
     fn from(err: cpal::DevicesError) -> Self {
-        LifeLoggingError::Audio(AudioError::Devices(err))
+        Error::Audio(AudioError::Devices(err))
     }
 }
 
-impl From<cpal::SupportedStreamConfigsError> for LifeLoggingError {
+impl From<cpal::SupportedStreamConfigsError> for Error {
     fn from(err: cpal::SupportedStreamConfigsError) -> Self {
-        LifeLoggingError::Audio(AudioError::SupportedStreamConfigs(err))
+        Error::Audio(AudioError::SupportedStreamConfigs(err))
     }
 }
 
-impl From<cpal::DefaultStreamConfigError> for LifeLoggingError {
+impl From<cpal::DefaultStreamConfigError> for Error {
     fn from(err: cpal::DefaultStreamConfigError) -> Self {
-        LifeLoggingError::Audio(AudioError::DefaultStreamConfig(err))
+        Error::Audio(AudioError::DefaultStreamConfig(err))
     }
 }
 
-impl From<cpal::DeviceNameError> for LifeLoggingError {
+impl From<cpal::DeviceNameError> for Error {
     fn from(err: cpal::DeviceNameError) -> Self {
-        LifeLoggingError::Audio(AudioError::DeviceName(err))
+        Error::Audio(AudioError::DeviceName(err))
     }
 }
 
-impl From<cpal::BuildStreamError> for LifeLoggingError {
+impl From<cpal::BuildStreamError> for Error {
     fn from(err: cpal::BuildStreamError) -> Self {
-        LifeLoggingError::Audio(AudioError::Stream(err))
+        Error::Audio(AudioError::Stream(err))
     }
 }

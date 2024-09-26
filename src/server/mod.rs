@@ -3,7 +3,8 @@ mod routes;
 
 use crate::app_state::AppState;
 use crate::config::CONFIG_MANAGER;
-use crate::error::{Result, ServerError};
+use crate::error::ServerError;
+use crate::prelude::*;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
