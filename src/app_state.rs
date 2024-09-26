@@ -2,6 +2,7 @@ use crate::audio::buffer::AudioBuffer;
 use crate::config::CONFIG_MANAGER;
 use crate::persistence::DiskStorage;
 use crate::prelude::*;
+use crate::storage::{LocalStorage, S3Storage, StorageManager};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -13,7 +14,7 @@ pub struct AppState {
     pub audio_buffer: Arc<RwLock<AudioBuffer>>,
     pub audio_sender: broadcast::Sender<Vec<f32>>,
     pub start_time: SystemTime,
-    pub disk_storage: Arc<DiskStorage>,
+    pub storage_manager: Arc<StorageManager>,
 }
 
 impl AppState {
@@ -24,16 +25,22 @@ impl AppState {
         let buffer_size =
             config.read().await.buffer_duration as usize * stream_config.sample_rate.0 as usize;
 
-        let disk_storage = Arc::new(
-            DiskStorage::new(
-                PathBuf::from("./data/audio_storage"),
-                "audio/mac".to_string(), // S3 storage path
-                buffer_duration,
-                "opus".to_string(),
-                48000,
-            )
-            .await?,
-        );
+        let local_storage =
+            LocalStorage::new(PathBuf::from("./data/audio_storage"), "opus".to_string())?;
+
+        let s3_storage = if let (Some(bucket), Some(region)) = (s3_bucket, s3_region) {
+            Some(S3Storage::new(region, bucket, "audio/mac".to_string()).await?)
+        } else {
+            None
+        };
+
+        let storage_manager = Arc::new(StorageManager::new(
+            local_storage,
+            s3_storage,
+            Duration::from_secs(config.read().await.buffer_duration),
+            48000,
+            "opus".to_string(),
+        ));
 
         Ok(AppState {
             audio_buffer: Arc::new(RwLock::new(AudioBuffer::new(
@@ -42,7 +49,7 @@ impl AppState {
             ))),
             audio_sender: broadcast::channel(1024).0,
             start_time: SystemTime::now(),
-            disk_storage,
+            storage_manager,
         })
     }
 }
