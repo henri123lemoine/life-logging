@@ -10,7 +10,6 @@ pub trait AudioEncoder: Send + Sync {
     fn encode(&self, data: &[f32], sample_rate: u32) -> Result<Vec<u8>>;
     fn mime_type(&self) -> &'static str;
     fn content_disposition(&self) -> &'static str;
-    fn file_extension(&self) -> &'static str;
 }
 
 pub struct PcmEncoder;
@@ -30,10 +29,6 @@ impl AudioEncoder for PcmEncoder {
 
     fn content_disposition(&self) -> &'static str {
         "attachment; filename=\"audio.pcm\""
-    }
-
-    fn file_extension(&self) -> &'static str {
-        "pcm"
     }
 }
 
@@ -94,10 +89,6 @@ impl AudioEncoder for WavEncoder {
     fn content_disposition(&self) -> &'static str {
         "attachment; filename=\"audio.wav\""
     }
-
-    fn file_extension(&self) -> &'static str {
-        "wav"
-    }
 }
 
 pub struct FlacEncoder;
@@ -147,10 +138,6 @@ impl AudioEncoder for FlacEncoder {
 
     fn content_disposition(&self) -> &'static str {
         "attachment; filename=\"audio.flac\""
-    }
-
-    fn file_extension(&self) -> &'static str {
-        "flac"
     }
 }
 
@@ -216,10 +203,6 @@ impl AudioEncoder for OpusEncoder {
     fn content_disposition(&self) -> &'static str {
         "attachment; filename=\"audio.opus\""
     }
-
-    fn file_extension(&self) -> &'static str {
-        "opus"
-    }
 }
 
 pub struct EncoderFactory {
@@ -248,21 +231,22 @@ impl EncoderFactory {
             Box::new(FlacEncoder) as Box<dyn AudioEncoder>,
         );
         encoders.insert(
-            "opus".to_string(),
-            Box::new(OpusEncoder::new(32)) as Box<dyn AudioEncoder>, // Default to 32kbps
+            "opus".to_string(), // Default to 32kbps
+            Box::new(OpusEncoder::new(32)) as Box<dyn AudioEncoder>,
+        );
+        encoders.insert(
+            "opus32".to_string(),
+            Box::new(OpusEncoder::new(32)) as Box<dyn AudioEncoder>,
+        );
+        encoders.insert(
+            "opus64".to_string(),
+            Box::new(OpusEncoder::new(64)) as Box<dyn AudioEncoder>,
         );
         EncoderFactory { encoders }
     }
 
     pub fn get_encoder(&self, format: &str) -> Option<&dyn AudioEncoder> {
         self.encoders.get(format).map(|boxed| boxed.as_ref())
-    }
-
-    pub fn set_opus_bitrate(&mut self, bitrate: u32) {
-        self.encoders.insert(
-            "opus".to_string(),
-            Box::new(OpusEncoder::new(bitrate)) as Box<dyn AudioEncoder>,
-        );
     }
 }
 
