@@ -1,14 +1,15 @@
 use crate::error::PersistenceError;
 use crate::prelude::*;
 use chrono::{DateTime, Utc};
+use chrono::{Datelike, Timelike};
 use std::collections::VecDeque;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tracing::{error, info};
 
-use super::storage::Storage;
+use super::Storage;
 
 pub struct LocalStorage {
     storage_path: PathBuf,
@@ -40,7 +41,6 @@ impl LocalStorage {
     }
 }
 
-#[async_trait::async_trait]
 impl Storage for LocalStorage {
     async fn save(&self, data: &[u8], timestamp: DateTime<Utc>) -> Result<()> {
         let filename = self.generate_filename(&timestamp);

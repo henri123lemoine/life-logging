@@ -26,9 +26,9 @@ async fn main() -> Result<()> {
     // Start the persistence task
     let persistence_app_state = app_state.clone();
     tokio::spawn(async move {
-        let disk_storage = persistence_app_state.disk_storage.clone();
+        let storage_manager = persistence_app_state.storage_manager.clone();
         let audio_buffer = persistence_app_state.audio_buffer.clone();
-        disk_storage.start_persistence_task(audio_buffer).await;
+        storage_manager.start_persistence_task(audio_buffer).await;
     });
 
     // Start the server

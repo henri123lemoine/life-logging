@@ -1,8 +1,8 @@
 use crate::audio::buffer::AudioBuffer;
 use crate::config::CONFIG_MANAGER;
-use crate::persistence::DiskStorage;
+use crate::persistence::{LocalStorage, S3Storage, StorageManager};
 use crate::prelude::*;
-use crate::storage::{LocalStorage, S3Storage, StorageManager};
+use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -20,7 +20,6 @@ pub struct AppState {
 impl AppState {
     pub async fn new() -> Result<Self> {
         let config = CONFIG_MANAGER.get_config().await;
-        let buffer_duration = Duration::from_secs(config.read().await.buffer_duration);
         let (_, stream_config) = CONFIG_MANAGER.get_audio_config().await?;
         let buffer_size =
             config.read().await.buffer_duration as usize * stream_config.sample_rate.0 as usize;
@@ -28,10 +27,11 @@ impl AppState {
         let local_storage =
             LocalStorage::new(PathBuf::from("./data/audio_storage"), "opus".to_string())?;
 
-        let s3_storage = if let (Some(bucket), Some(region)) = (s3_bucket, s3_region) {
-            Some(S3Storage::new(region, bucket, "audio/mac".to_string()).await?)
-        } else {
-            None
+        let s3_storage = match (env::var("AWS_S3_BUCKET").ok(), env::var("AWS_REGION").ok()) {
+            (Some(bucket), Some(region)) => {
+                Some(S3Storage::new(region, bucket, "audio/mac".to_string()).await?)
+            }
+            _ => None,
         };
 
         let storage_manager = Arc::new(StorageManager::new(

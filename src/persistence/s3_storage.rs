@@ -4,10 +4,11 @@ use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::types::StorageClass;
 use aws_sdk_s3::{config::Region, Client};
 use chrono::{DateTime, Utc};
+use chrono::{Datelike, Timelike};
 use std::time::Duration;
-use tracing::{error, info};
+use tracing::info;
 
-use super::storage::Storage;
+use super::Storage;
 
 pub struct S3Storage {
     client: Client,
@@ -44,7 +45,6 @@ impl S3Storage {
     }
 }
 
-#[async_trait::async_trait]
 impl Storage for S3Storage {
     async fn save(&self, data: &[u8], timestamp: DateTime<Utc>) -> Result<()> {
         let key = self.generate_key(&timestamp);

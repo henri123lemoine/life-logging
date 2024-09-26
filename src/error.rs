@@ -68,6 +68,12 @@ pub enum PersistenceError {
     #[error("Unsupported audio format: {0}")]
     UnsupportedFormat(String),
 
+    #[error("File not found: {0}")]
+    FileNotFound(String),
+
+    #[error("Failed to read audio file: {0}")]
+    FileRead(String),
+
     #[error("Failed to write audio data: {0}")]
     FileWrite(io::Error),
 
@@ -82,6 +88,9 @@ pub enum PersistenceError {
 
     #[error("S3 upload error: {0}")]
     S3Upload(String),
+
+    #[error("S3 download error: {0}")]
+    S3Download(String),
 }
 
 #[derive(thiserror::Error, Debug)]
