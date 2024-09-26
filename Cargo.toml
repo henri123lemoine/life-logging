@@ -8,11 +8,11 @@ license = "MIT"
 repository = "https://github.com/henri123lemoine/life-logging"
 
 [lib]
-name = "life-logging"
+name = "life_logging"
 path = "src/lib.rs"
 
 [[bin]]
-name = "life-logging"
+name = "life_logging"
 path = "src/main.rs"
 
 [dependencies]
