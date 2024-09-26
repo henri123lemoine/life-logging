@@ -3,24 +3,23 @@
 ![GitHub release (latest by date including pre-releases)](https://img.shields.io/github/v/release/henri123lemoine/life-logging?include_prereleases)
 ![GitHub](https://img.shields.io/github/license/henri123lemoine/life-logging)
 
-Lifelogging is a Rust-based project for [lifelogging](https://en.wikipedia.org/wiki/Lifelog). It runs a low-memory server that makes it easy for other projects on your machine to access audio data, transcriptions, keypresses, and more. This project is meant only for personal use.
+A Rust-based [lifelogging](https://en.wikipedia.org/wiki/Lifelog) audio recording server for personal use. This project runs a low-memory server that makes it easy for other projects on your machine to access recent audio data.
 
 ## Features
 
-Audio:
-
-- Continuous audio recording.
-- Circular buffer to store the most recent audio data.
-- API to retrieve audio data as PCM/WAV/FLAC/OPUS files.
-- Configurable buffer duration.
-- Long-term audio persistence with AWS S3.
+- Continuous audio recording with a 20-minute in-memory buffer
+- API for retrieving audio data in various formats (PCM, WAV, FLAC, Opus)
+- Audio visualization
+- Short-term persistence to disk (last 5 hours)
+- Long-term persistence to AWS S3
 
 ## Getting Started
 
 ### Prerequisites
 
 - Rust (latest stable version)
-- A system with audio input capabilities
+- FFmpeg (for Opus encoding)
+- FLAC encoder (optional, for FLAC support)
 
 ### Installation
 
@@ -30,12 +29,14 @@ Audio:
    cd life-logging
    ```
 
-2. Build the project:
+2. Set up environment variables (see Configuration section)
+
+3. Build the project:
    ```bash
    cargo build --release
    ```
 
-3. Run the server:
+4. Run the server:
    There are two options for running the server:
    - To run the server in the foreground (useful for debugging):
       ```bash
@@ -58,12 +59,14 @@ The server will start on `http://127.0.0.1:61429`, or whichever port is chosen i
 
 ## Usage
 
-- **Get Audio**: `GET /get_audio` - Returns the most recent audio data. Query parameters:
-  - `format`: The audio format to return. Supported formats are `pcm`, `wav`, `flac`, and `opus`. Default is `wav`.
-  - `duration`: The duration of audio to return, in seconds. Default is the entire buffer, namely 20 minutes.
-- **Visualize Audio**: `GET /visualize_audio` - Returns a PNG image visualizing the recent audio data. Useful for debugging.
+For most purposes, these are the only two endpoints you need to know:
 
-Run the app and visit `http://localhost:61429/swagger-ui/` to view the full API documentation.
+- `GET /get_audio` - Returns the most recent audio data. Query parameters:
+  - `format`: The audio format to return. Supported formats are `pcm`, `wav`, `flac`, and `opus`. Default is `wav`.
+  - `duration`: The duration of audio to return, in seconds. Default is the entire buffer, 20 minutes.
+- `GET /visualize_audio` - Returns a PNG image visualizing the recent audio data. Useful for debugging.
+
+For full API documentation, visit `http://localhost:61429/swagger-ui/` while the server is running.
 
 ### Examples
 
@@ -78,11 +81,9 @@ Visualize recent audio data: Go to `http://127.0.0.1:61429/visualize_audio` in y
 
 The application uses a flexible configuration system that supports both file-based configuration and environment variable overrides.
 
-### Configuration File
-
 The default configuration is set in `config/default.toml`. To override the default configuration, add another `.toml` file to the `config` directory with your preferred settings. The server will automatically load the configuration from this file.
 
-Temporarily, AWS configuration is stored in a `.env` file. You can copy the `.env.example` file to `.env` and fill in your AWS credentials and bucket configurations.
+Temporarily, AWS configuration is stored in a `.env` file. You can copy the `.env.example` file to `.env` and fill in your AWS credentials and s3 bucket configurations.
 
 ### Logging
 
@@ -99,18 +100,24 @@ This project involves continuous audio recording, which has significant privacy 
 
 ## Future Improvements
 
-- [ ] Long-term audio persistence
+- [x] Long-term audio persistence
   - [x] Every `buffer_duration` seconds, store the audio buffer to disk
   - [x] Efficient compression with Opus at 32kbps
   - [x] s3 persistence
   - [ ] Silence removal? Better compression? Switch to cheaper s3 storage?
         *Note: the returns on further compression are very small, and storage costs are absurdly low.*
-  - [ ] Remove +1d old local files.
+  - [x] Remove +1d old local files. (done, but for 5h instead of a day)
+- [ ] Improve `/get_audio`:
+  - [ ] Retrieve audio for specific time ranges or timestamps
+  - [ ] Retrieve audio in chunks for large requests
+  - [ ] Generally, improve performance
+  - [ ] Add support for other audio formats (e.g., MP3)
+- [ ] Expand lifelogging data structure to include transcriptions, keylogs, screenshots, etc.
 - [ ] Transcription with whisperx
 - [ ] Audio analysis (e.g., live note detection)
 - [ ] Websocket support for real-time audio streaming
 - [ ] Keypress logging integration
-- [ ] Occasional screenshots (?)
+- [ ] Improve test coverage :eyes:
 
 ## Performance investigations
 
