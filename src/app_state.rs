@@ -1,7 +1,7 @@
 use crate::audio::buffer::AudioBuffer;
 use crate::config::CONFIG_MANAGER;
-use crate::persistence::{LocalStorage, S3Storage, StorageManager};
 use crate::prelude::*;
+use crate::storage::{LocalStorage, S3Storage, StorageManager};
 use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;

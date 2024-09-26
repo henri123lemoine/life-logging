@@ -12,7 +12,7 @@ pub enum Error {
     Config(#[from] ConfigError),
 
     #[error("Persistence error: {0}")]
-    Persistence(#[from] PersistenceError),
+    Storage(#[from] StorageError),
 
     #[error("Server error: {0}")]
     Server(#[from] ServerError),
@@ -61,7 +61,7 @@ pub enum ConfigError {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum PersistenceError {
+pub enum StorageError {
     #[error("Failed to create storage directory: {0}")]
     DirectoryCreation(io::Error),
 

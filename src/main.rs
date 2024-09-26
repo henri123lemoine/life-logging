@@ -4,9 +4,9 @@ mod app_state;
 mod audio;
 mod config;
 mod error;
-mod persistence;
 mod prelude;
 mod server;
+mod storage;
 
 use app_state::AppState;
 use audio::processor;

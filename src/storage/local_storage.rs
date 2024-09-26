@@ -1,4 +1,4 @@
-use crate::error::PersistenceError;
+use crate::error::StorageError;
 use crate::prelude::*;
 use chrono::{DateTime, Utc};
 use chrono::{Datelike, Timelike};
@@ -19,7 +19,7 @@ pub struct LocalStorage {
 
 impl LocalStorage {
     pub fn new(storage_path: PathBuf, format: String) -> Result<Self> {
-        fs::create_dir_all(&storage_path).map_err(PersistenceError::DirectoryCreation)?;
+        fs::create_dir_all(&storage_path).map_err(StorageError::DirectoryCreation)?;
         Ok(Self {
             storage_path,
             format,
@@ -45,7 +45,7 @@ impl Storage for LocalStorage {
     async fn save(&self, data: &[u8], timestamp: DateTime<Utc>) -> Result<()> {
         let filename = self.generate_filename(&timestamp);
         let file_path = self.storage_path.join(filename);
-        fs::write(&file_path, data).map_err(PersistenceError::FileWrite)?;
+        fs::write(&file_path, data).map_err(StorageError::FileWrite)?;
 
         let mut local_files = self.local_files.lock().await;
         local_files.push_back((timestamp, file_path.clone()));
@@ -60,9 +60,9 @@ impl Storage for LocalStorage {
             .iter()
             .find(|(file_timestamp, _)| *file_timestamp <= timestamp)
             .map(|(_, path)| path.clone())
-            .ok_or_else(|| PersistenceError::FileNotFound(timestamp.to_string()))?;
+            .ok_or_else(|| StorageError::FileNotFound(timestamp.to_string()))?;
 
-        fs::read(&file_path).map_err(|e| PersistenceError::FileRead(e.to_string()).into())
+        fs::read(&file_path).map_err(|e| StorageError::FileRead(e.to_string()).into())
     }
 
     async fn cleanup(&self, retention_period: Duration) -> Result<()> {
