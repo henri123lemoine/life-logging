@@ -2,6 +2,7 @@ use crate::audio::buffer::AudioBuffer;
 use crate::config::CONFIG_MANAGER;
 use crate::prelude::*;
 use crate::storage::{LocalStorage, S3Storage, StorageManager};
+use dotenv::dotenv;
 use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -9,6 +10,7 @@ use std::time::SystemTime;
 use tokio::sync::broadcast;
 use tokio::sync::RwLock;
 use tokio::time::Duration;
+use tracing::{error, info, warn};
 
 pub struct AppState {
     pub audio_buffer: Arc<RwLock<AudioBuffer>>,
@@ -27,11 +29,28 @@ impl AppState {
         let local_storage =
             LocalStorage::new(PathBuf::from("./data/audio_storage"), "opus".to_string())?;
 
-        let s3_storage = match (env::var("AWS_S3_BUCKET").ok(), env::var("AWS_REGION").ok()) {
-            (Some(bucket), Some(region)) => {
-                Some(S3Storage::new(region, bucket, "audio/mac".to_string()).await?)
+        dotenv().ok();
+        let s3_storage = match (std::env::var("AWS_S3_BUCKET"), std::env::var("AWS_REGION")) {
+            (Ok(bucket), Ok(region)) => {
+                info!(
+                    "Attempting to initialize S3 storage with bucket: {} and region: {}",
+                    bucket, region
+                );
+                match S3Storage::new(region, bucket, "audio/mac".to_string()).await {
+                    Ok(storage) => {
+                        info!("S3 storage initialized successfully");
+                        Some(storage)
+                    }
+                    Err(e) => {
+                        error!("Failed to initialize S3 storage: {}", e);
+                        None
+                    }
+                }
             }
-            _ => None,
+            _ => {
+                error!("S3 storage not configured, using local storage only. Make sure AWS_S3_BUCKET and AWS_REGION are set.");
+                None
+            }
         };
 
         let storage_manager = Arc::new(StorageManager::new(
