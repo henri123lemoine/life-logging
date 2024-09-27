@@ -78,6 +78,17 @@ impl StorageManager {
         }
     }
 
+    pub async fn start_cleanup_task(self: Arc<Self>, local_retention: Duration) {
+        let cleanup_interval = Duration::from_secs(3600); // Run every hour
+        let mut interval = time::interval(cleanup_interval);
+        loop {
+            interval.tick().await;
+            if let Err(e) = self.local_storage.cleanup(local_retention).await {
+                error!("Failed to clean up local storage: {}", e);
+            }
+        }
+    }
+
     fn resample(&self, data: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
         if from_rate == to_rate {
             return data.to_vec();
