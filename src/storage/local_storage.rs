@@ -70,14 +70,13 @@ impl Storage for LocalStorage {
         let cutoff = Utc::now() - chrono::Duration::from_std(retention_period).unwrap();
 
         local_files.retain(|(timestamp, path)| {
-            if timestamp < &cutoff {
+            if *timestamp < cutoff {
                 if let Err(e) = fs::remove_file(path) {
                     error!("Failed to remove old local file: {:?}. Error: {}", path, e);
-                    false
                 } else {
                     info!("Removed old local file: {:?}", path);
-                    false
                 }
+                false
             } else {
                 true
             }
