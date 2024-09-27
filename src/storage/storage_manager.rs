@@ -8,12 +8,12 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::time;
-use tracing::error;
+use tracing::{error, info};
 
 pub struct StorageManager {
     local_storage: Arc<LocalStorage>,
     s3_storage: Option<Arc<S3Storage>>,
-    interval: Duration,
+    local_interval: Duration,
     target_sample_rate: u32,
     format: String,
 }
@@ -22,14 +22,14 @@ impl StorageManager {
     pub fn new(
         local_storage: LocalStorage,
         s3_storage: Option<S3Storage>,
-        interval: Duration,
+        local_interval: Duration,
         target_sample_rate: u32,
         format: String,
     ) -> Self {
         Self {
             local_storage: Arc::new(local_storage),
             s3_storage: s3_storage.map(Arc::new),
-            interval,
+            local_interval,
             target_sample_rate,
             format,
         }
@@ -38,7 +38,7 @@ impl StorageManager {
     pub async fn persist_audio(&self, audio_buffer: Arc<RwLock<AudioBuffer>>) -> Result<()> {
         let data = {
             let buffer = audio_buffer.read().await;
-            buffer.read(Some(self.interval))
+            buffer.read(Some(self.local_interval))
         };
 
         let current_sample_rate = {
@@ -61,15 +61,19 @@ impl StorageManager {
 
         self.local_storage.save(&encoded_data, timestamp).await?;
 
-        if let Some(s3) = &self.s3_storage {
-            s3.save(&encoded_data, timestamp).await?;
+        match &self.s3_storage {
+            Some(s3) => {
+                info!("Attempting to save to S3");
+                s3.save(&encoded_data, timestamp).await?
+            }
+            None => info!("S3 storage not configured, skipping S3 upload"),
         }
 
         Ok(())
     }
 
     pub async fn start_persistence_task(self: Arc<Self>, audio_buffer: Arc<RwLock<AudioBuffer>>) {
-        let mut interval = time::interval(self.interval);
+        let mut interval = time::interval(self.local_interval);
         loop {
             interval.tick().await;
             if let Err(e) = self.persist_audio(audio_buffer.clone()).await {
