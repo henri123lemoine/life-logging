@@ -44,3 +44,7 @@ criterion = "0.5.1"
 [[bench]]
 name = "audio_buffer_benchmark"
 harness = false
+
+[[bench]]
+name = "wav_encoder_benchmark"
+harness = false
