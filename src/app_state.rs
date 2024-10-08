@@ -3,14 +3,13 @@ use crate::config::CONFIG_MANAGER;
 use crate::prelude::*;
 use crate::storage::{LocalStorage, S3Storage, StorageManager};
 use dotenv::dotenv;
-use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::broadcast;
 use tokio::sync::RwLock;
 use tokio::time::Duration;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 pub struct AppState {
     pub audio_buffer: Arc<RwLock<AudioBuffer>>,

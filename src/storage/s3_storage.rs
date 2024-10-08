@@ -86,7 +86,7 @@ impl Storage for S3Storage {
         Ok(data.to_vec())
     }
 
-    async fn cleanup(&self, retention_period: Duration) -> Result<()> {
+    async fn cleanup(&self, _retention_period: Duration) -> Result<()> {
         // S3 cleanup is typically handled by lifecycle policies set on the bucket
         // This method could be used to manually delete old objects if needed
         Ok(())
