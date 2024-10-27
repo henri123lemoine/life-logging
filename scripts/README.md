@@ -12,4 +12,11 @@ uv run loss_experiments.py
 
 ## Scripts & Experiments
 
-- `loss_experiments.py`: Experiments measuring information loss in iterative compression-decompression cycles.
+### Loss
+
+Experiments measuring information loss in iterative compression-decompression cycles.
+
+File: `loss_experiments.py`
+Run with: `uv run loss_experiments.py`
+
+Plots: TODO
