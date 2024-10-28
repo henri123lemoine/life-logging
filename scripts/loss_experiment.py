@@ -45,22 +45,24 @@ def calculate_noise_entropy(signal, frame_length=2048, hop_length=512):
     # Compute STFT
     D = librosa.stft(signal, n_fft=frame_length, hop_length=hop_length)
     S = np.abs(D)
-    
+
     # Spectral flatness (high = noise-like, low = tonal)
-    spectral_flatness = np.exp(np.mean(np.log(S + 1e-10), axis=0)) / (np.mean(S, axis=0) + 1e-10)
-    
+    spectral_flatness = np.exp(np.mean(np.log(S + 1e-10), axis=0)) / (
+        np.mean(S, axis=0) + 1e-10
+    )
+
     # Spectral entropy across frequency bins
     S_norm = S / (np.sum(S, axis=0) + 1e-10)
     spectral_entropy = np.mean([entropy(frame) for frame in S_norm.T])
-    
+
     # Std of local segments
     segments = librosa.util.frame(signal, frame_length=1024, hop_length=512)
     temporal_variation = np.std(np.std(segments, axis=0))
 
     return {
-        'spectral_flatness': float(np.mean(spectral_flatness)),
-        'spectral_entropy': float(spectral_entropy),
-        'temporal_variation': float(temporal_variation)
+        "spectral_flatness": float(np.mean(spectral_flatness)),
+        "spectral_entropy": float(spectral_entropy),
+        "temporal_variation": float(temporal_variation),
     }
 
 
