@@ -29,9 +29,6 @@ pub enum AudioError {
     #[error("Audio stream play error: {0}")]
     StreamPlay(#[from] cpal::PlayStreamError),
 
-    #[error("Encoding error: {0}")]
-    Encoding(String),
-
     #[error("Device enumeration error: {0}")]
     Devices(#[from] cpal::DevicesError),
 
@@ -46,6 +43,39 @@ pub enum AudioError {
 
     #[error("Failed to acquire read lock on audio buffer")]
     BufferLockAcquisition,
+
+    #[error("Unsupported audio format: {0}")]
+    UnsupportedFormat(String),
+
+    #[error("Codec error: {0}")]
+    Codec(#[from] CodecError),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum CodecError {
+    #[error("Encoding error: {0}")]
+    Encoding(String),
+
+    #[error("Decoding error: {0}")]
+    Decoding(String),
+
+    #[error("Unsupported sample rate {0}Hz")]
+    UnsupportedSampleRate(u32),
+
+    #[error("Invalid data format: {0}")]
+    InvalidFormat(String),
+
+    #[error("Invalid data: {0}")]
+    InvalidData(&'static str),
+
+    #[error("Invalid configuration: {0}")]
+    InvalidConfiguration(&'static str),
+
+    #[error("External command failed: {0}")]
+    ExternalCommand(String),
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -62,11 +92,20 @@ pub enum ConfigError {
 
 #[derive(thiserror::Error, Debug)]
 pub enum StorageError {
+    #[error("Local storage error: {0}")]
+    Local(#[from] LocalError),
+
+    #[error("DB error: {0}")]
+    DB(#[from] DBError),
+
+    #[error("S3 error: {0}")]
+    S3(#[from] S3Error),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum LocalError {
     #[error("Failed to create storage directory: {0}")]
     DirectoryCreation(io::Error),
-
-    #[error("Unsupported audio format: {0}")]
-    UnsupportedFormat(String),
 
     #[error("File not found: {0}")]
     FileNotFound(String),
@@ -79,10 +118,13 @@ pub enum StorageError {
 
     #[error("File cleanup error: {0}")]
     FileCleanup(String),
+}
 
-    #[error("Failed to acquire read lock on audio buffer")]
-    BufferLockAcquisition,
+#[derive(thiserror::Error, Debug)]
+pub enum DBError {}
 
+#[derive(thiserror::Error, Debug)]
+pub enum S3Error {
     #[error("S3 config error: {0}")]
     S3Config(String),
 
@@ -91,6 +133,12 @@ pub enum StorageError {
 
     #[error("S3 download error: {0}")]
     S3Download(String),
+
+    #[error("S3 operation timed out after {0:?}")]
+    Timeout(std::time::Duration),
+
+    #[error("S3 connection error: {0}")]
+    ConnectionError(String),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -100,6 +148,21 @@ pub enum ServerError {
 
     #[error("Route handling error: {0}")]
     RouteHandler(String),
+
+    #[error("Invalid request: {0}")]
+    BadRequest(String),
+
+    #[error("Resource not found: {0}")]
+    NotFound(String),
+
+    #[error("Internal server error: {0}")]
+    Internal(String),
+}
+
+impl From<CodecError> for Error {
+    fn from(err: CodecError) -> Self {
+        Error::Audio(AudioError::Codec(err))
+    }
 }
 
 impl From<cpal::DevicesError> for Error {

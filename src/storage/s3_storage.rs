@@ -1,4 +1,4 @@
-use crate::error::StorageError;
+use crate::error::S3Error;
 use crate::prelude::*;
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::types::StorageClass;
@@ -58,7 +58,7 @@ impl Storage for S3Storage {
             .storage_class(StorageClass::GlacierIr)
             .send()
             .await
-            .map_err(|e| StorageError::S3Upload(e.to_string()))?;
+            .map_err(|e| S3Error::S3Upload(e.to_string()));
 
         info!("Uploaded audio data to S3: {}", key);
         Ok(())
@@ -74,13 +74,13 @@ impl Storage for S3Storage {
             .key(&key)
             .send()
             .await
-            .map_err(|e| StorageError::S3Download(e.to_string()))?;
+            .map_err(|e| S3Error::S3Download(e.to_string()));
 
         let data = obj
             .body
             .collect()
             .await
-            .map_err(|e| StorageError::S3Download(e.to_string()))?
+            .map_err(|e| S3Error::S3Download(e.to_string()))
             .into_bytes();
 
         Ok(data.to_vec())
