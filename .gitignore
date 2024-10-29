@@ -59,6 +59,8 @@ config/*.toml
 .env
 
 # project-specific
-data/
+data/**
+!data/test_voice.wav
+
 logs/
 testing.ipynb
