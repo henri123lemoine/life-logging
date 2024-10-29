@@ -14,7 +14,7 @@ pub struct AudioTestCase {
     pub category: AudioCategory,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AudioCategory {
     Noise,
     Speech,
