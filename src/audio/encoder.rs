@@ -1,14 +1,18 @@
-use crate::error::AudioError;
+use crate::error::CodecError;
 use crate::prelude::*;
+use candle_core::{DType, Device, Tensor};
+use moshi::encodec::{Config, Encodec};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::io::Write;
 use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
 use tempfile::NamedTempFile;
 use tracing::{error, info};
 
 pub trait AudioEncoder: Send + Sync {
     fn encode(&self, data: &[f32], sample_rate: u32) -> Result<Vec<u8>>;
+    fn decode(&self, data: &[u8], sample_rate: u32) -> Result<Vec<f32>>;
     fn mime_type(&self) -> &'static str;
     fn content_disposition(&self) -> &'static str;
 }
@@ -22,6 +26,10 @@ impl AudioEncoder for PcmEncoder {
             .flat_map(|&sample| sample.to_le_bytes().to_vec())
             .collect();
         Ok(byte_data)
+    }
+
+    fn decode(&self, data: &[u8], _sample_rate: u32) -> Result<Vec<f32>> {
+        todo!()
     }
 
     fn mime_type(&self) -> &'static str {
@@ -71,8 +79,8 @@ impl AudioEncoder for WavEncoder {
             buffer
                 .write_all(&value.to_le_bytes())
                 .map_err(|e: std::io::Error| {
-                    AudioError::Encoding(format!("Failed to write WAV data: {}", e))
-                })?;
+                    CodecError::Encoding(format!("Failed to write WAV data: {}", e))
+                });
         }
 
         info!(
@@ -81,6 +89,10 @@ impl AudioEncoder for WavEncoder {
             buffer.len()
         );
         Ok(buffer)
+    }
+
+    fn decode(&self, data: &[u8], _sample_rate: u32) -> Result<Vec<f32>> {
+        todo!()
     }
 
     fn mime_type(&self) -> &'static str {
@@ -97,13 +109,13 @@ pub struct FlacEncoder;
 impl AudioEncoder for FlacEncoder {
     fn encode(&self, data: &[f32], sample_rate: u32) -> Result<Vec<u8>> {
         // Create a temporary WAV file
-        let temp_wav = NamedTempFile::new().map_err(|e| AudioError::Encoding(e.to_string()))?;
+        let temp_wav = NamedTempFile::new().map_err(|e| CodecError::Encoding(e.to_string()));
         let wav_encoder = WavEncoder;
         let wav_data = wav_encoder.encode(data, sample_rate)?;
         temp_wav
             .as_file()
             .write_all(&wav_data)
-            .map_err(|e| AudioError::Encoding(e.to_string()))?;
+            .map_err(|e| CodecError::Encoding(e.to_string()));
 
         // Use external FLAC encoder
         let output = Command::new("flac")
@@ -114,15 +126,16 @@ impl AudioEncoder for FlacEncoder {
             .output()
             .map_err(|e| {
                 error!("Failed to execute FLAC encoder: {}", e);
-                AudioError::Encoding(format!("Failed to execute FLAC encoder: {}", e))
-            })?;
+                CodecError::Encoding(format!("Failed to execute FLAC encoder: {}", e))
+            });
 
         if !output.status.success() {
             let error_message = String::from_utf8_lossy(&output.stderr);
             error!("FLAC encoding failed: {}", error_message);
-            return Err(
-                AudioError::Encoding(format!("FLAC encoding failed: {}", error_message)).into(),
-            );
+            return Err(CodecError::Encoding(format!(
+                "FLAC encoding failed: {}",
+                error_message
+            )));
         }
 
         info!(
@@ -131,6 +144,10 @@ impl AudioEncoder for FlacEncoder {
             output.stdout.len()
         );
         Ok(output.stdout)
+    }
+
+    fn decode(&self, data: &[u8], _sample_rate: u32) -> Result<Vec<f32>> {
+        todo!()
     }
 
     fn mime_type(&self) -> &'static str {
@@ -155,15 +172,16 @@ impl OpusEncoder {
 impl AudioEncoder for OpusEncoder {
     fn encode(&self, data: &[f32], sample_rate: u32) -> Result<Vec<u8>> {
         // Create a temporary WAV file
-        let mut temp_wav = NamedTempFile::new()
-            .map_err(|e| AudioError::Encoding(format!("Failed to create temp WAV file: {}", e)))?;
+        let mut temp_wav: NamedTempFile = NamedTempFile::new()
+            .map_err(|e| CodecError::Encoding(format!("Failed to create temp WAV file: {}", e)))
+            .into()?;
 
         // Write WAV data to the temporary file
         let wav_encoder = WavEncoder;
         let wav_data = wav_encoder.encode(data, sample_rate)?;
         temp_wav
             .write_all(&wav_data)
-            .map_err(|e| AudioError::Encoding(format!("Failed to write WAV data: {}", e)))?;
+            .map_err(|e| CodecError::Encoding(format!("Failed to write WAV data: {}", e)))?;
 
         // Use FFmpeg to convert WAV to Opus
         let output = Command::new("ffmpeg")
@@ -197,12 +215,109 @@ impl AudioEncoder for OpusEncoder {
         Ok(output.stdout)
     }
 
+    fn decode(&self, data: &[u8], _sample_rate: u32) -> Result<Vec<f32>> {
+        todo!()
+    }
+
     fn mime_type(&self) -> &'static str {
         "audio/ogg"
     }
 
     fn content_disposition(&self) -> &'static str {
         "attachment; filename=\"audio.opus\""
+    }
+}
+
+pub struct MoshiEncoder {
+    model: Arc<Mutex<Encodec>>,
+    device: Device,
+}
+
+impl MoshiEncoder {
+    pub fn new() -> Result<Self> {
+        let device = Device::Cpu;
+        let config = Config::v0_1(None); // Use default number of codebooks
+        let vb = candle_nn::VarBuilder::zeros(candle_core::DType::F32, &device);
+        let model = Encodec::new(config, vb).map_err(|e| {
+            AudioError::Encoding(format!("Failed to create Moshi Encodec model: {}", e))
+        })?;
+
+        Ok(Self {
+            model: Arc::new(Mutex::new(model)),
+            device,
+        })
+    }
+}
+
+impl AudioEncoder for MoshiEncoder {
+    fn encode(&self, data: &[f32], sample_rate: u32) -> Result<Vec<u8>> {
+        if sample_rate != 24000 {
+            return Err(AudioError::Encoding("Moshi requires 24kHz audio".into()).into());
+        }
+
+        let input_tensor = Tensor::from_slice(data, (1, 1, data.len()), &self.device)
+            .map_err(|e| AudioError::Encoding(format!("Failed to create input tensor: {}", e)))?;
+
+        let encoded = self
+            .model
+            .lock()
+            .map_err(|e| {
+                AudioError::Encoding(format!("Failed to acquire lock on Moshi model: {}", e))
+            })?
+            .encode(&input_tensor)
+            .map_err(|e| AudioError::Encoding(format!("Moshi encoding failed: {}", e)))?;
+
+        let encoded_bytes = encoded
+            .to_dtype(DType::U8)
+            .map_err(|e| AudioError::Encoding(format!("Failed to convert tensor to U8: {}", e)))?
+            .flatten_all()
+            .map_err(|e| AudioError::Encoding(format!("Failed to flatten tensor: {}", e)))?
+            .to_vec1::<u8>()
+            .map_err(|e| {
+                AudioError::Encoding(format!("Failed to convert Moshi encoding to bytes: {}", e))
+            })?;
+
+        Ok(encoded_bytes)
+    }
+
+    fn decode(&self, data: &[u8], sample_rate: u32) -> Result<Vec<f32>> {
+        if sample_rate != 24000 {
+            return Err(AudioError::Encoding("Moshi requires 24kHz audio".into()).into());
+        }
+
+        let encoded_tensor = Tensor::from_slice(data, (1, data.len()), &self.device)
+            .map_err(|e| AudioError::Encoding(format!("Failed to create input tensor: {}", e)))?;
+
+        let encoded_tensor = encoded_tensor
+            .unsqueeze(1)
+            .map_err(|e| AudioError::Encoding(format!("Failed to unsqueeze tensor: {}", e)))?;
+
+        let decoded = self
+            .model
+            .lock()
+            .map_err(|e| {
+                AudioError::Encoding(format!("Failed to acquire lock on Moshi model: {}", e))
+            })?
+            .decode(&encoded_tensor)
+            .map_err(|e| AudioError::Encoding(format!("Moshi decoding failed: {}", e)))?;
+
+        let decoded_samples = decoded
+            .flatten_all()
+            .map_err(|e| AudioError::Encoding(format!("Failed to flatten tensor: {}", e)))?
+            .to_vec1::<f32>()
+            .map_err(|e| {
+                AudioError::Encoding(format!("Failed to convert Moshi decoding to vec: {}", e))
+            })?;
+
+        Ok(decoded_samples)
+    }
+
+    fn mime_type(&self) -> &'static str {
+        "application/x-moshi"
+    }
+
+    fn content_disposition(&self) -> &'static str {
+        "attachment; filename=\"audio.moshi\""
     }
 }
 
@@ -242,6 +357,11 @@ impl EncoderFactory {
         encoders.insert(
             "opus64".to_string(),
             Box::new(OpusEncoder::new(64)) as Box<dyn AudioEncoder>,
+        );
+        encoders.insert(
+            "moshi".to_string(),
+            Box::new(MoshiEncoder::new().expect("Failed to initialize MoshiEncoder"))
+                as Box<dyn AudioEncoder>,
         );
         EncoderFactory { encoders }
     }
