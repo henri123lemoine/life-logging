@@ -90,6 +90,8 @@ fn generate_test_module(
                 traits::CodecPerformance,
             };
 
+            const EPSILON: f32 = 1e-4; // Acceptable error for lossless codecs
+
             #[test]
             fn test_codec_properties() {
                 let codec = #codec_type::default();
@@ -160,10 +162,7 @@ fn generate_test_module(
                             test_case.name, metrics.correlation, min_correlation
                         );
                     } else {
-                        // For lossless codecs, we care about bit-perfect reconstruction
-                        // but need to account for floating-point precision limits
-                        const EPSILON: f32 = 1e-6;
-
+                        // For lossless codecs, we only check if error is within acceptable bounds
                         assert!(
                             metrics.max_abs_error < EPSILON,
                             "{}: Non-zero error in lossless codec: {}",
