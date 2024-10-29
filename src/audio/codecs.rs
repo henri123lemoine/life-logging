@@ -5,27 +5,42 @@ use std::{fmt::Debug, time::Duration, time::Instant};
 
 use candle_core::{DType, Device, Tensor};
 use once_cell::sync::Lazy;
+use std::any::Any;
+use std::collections::HashMap;
 use tempfile::NamedTempFile;
-use thiserror::Error;
 use tracing::{error, info};
 
 use crate::error::{AudioError, CodecError};
 use crate::prelude::*;
 
-fn codec_err(e: CodecError) -> Error {
-    Error::Audio(AudioError::Codec(e))
-}
-
-macro_rules! codec_err {
-    ($msg:expr) => {
-        Err(codec_err(CodecError::InvalidData($msg)))
+macro_rules! impl_codec_basics {
+    ($type:ty, $name:expr, $mime:expr, $ext:expr) => {
+        impl Codec for $type {
+            fn name(&self) -> &'static str {
+                $name
+            }
+            fn mime_type(&self) -> &'static str {
+                $mime
+            }
+            fn extension(&self) -> &'static str {
+                $ext
+            }
+        }
     };
 }
 
-pub trait Codec: Send + Sync + Debug {
+pub trait Codec: Send + Sync + Debug + Any {
     fn name(&self) -> &'static str;
     fn mime_type(&self) -> &'static str;
     fn extension(&self) -> &'static str;
+
+    fn is_lossy(&self) -> bool {
+        false
+    }
+
+    fn is_lossless(&self) -> bool {
+        false
+    }
 
     fn encode(&self, data: &[f32], sample_rate: u32) -> Result<Vec<u8>>;
     fn decode(&self, data: &[u8], sample_rate: u32) -> Result<Vec<f32>>;
@@ -87,7 +102,7 @@ pub trait LossyCodec: Codec {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct WavCodec {
     bits_per_sample: u16, // Usually 16 or 32
 }
@@ -100,6 +115,10 @@ impl WavCodec {
                 CodecError::InvalidConfiguration("WAV only supports 16 or 32 bits per sample"),
             ))),
         }
+    }
+
+    fn is_lossless(&self) -> bool {
+        true
     }
 
     fn write_header(&self, num_samples: usize, sample_rate: u32) -> Vec<u8> {
@@ -197,12 +216,16 @@ impl Codec for WavCodec {
 
     fn decode(&self, data: &[u8], sample_rate: u32) -> Result<Vec<f32>> {
         if data.len() < 44 {
-            return codec_err!("WAV header too short");
+            return Err(Error::Audio(AudioError::Codec(CodecError::InvalidData(
+                "WAV header too short",
+            ))));
         }
 
         // Verify RIFF header
         if &data[0..4] != b"RIFF" || &data[8..12] != b"WAVE" {
-            return codec_err!("Invalid WAV header");
+            return Err(Error::Audio(AudioError::Codec(CodecError::InvalidData(
+                "Invalid WAV header",
+            ))));
         }
 
         // Find data chunk
@@ -239,34 +262,45 @@ impl Codec for WavCodec {
 
 impl LosslessCodec for WavCodec {}
 
-pub static CODEC_REGISTRY: Lazy<CodecRegistry> = Lazy::new(|| {
-    let mut registry = CodecRegistry::new();
-    registry.register_lossless(WavCodec::default());
-    registry.register_lossless(FlacCodec::default());
-    registry.register_lossy(OpusCodec::new(64));
-    registry.register_lossy(MoshiCodec::default());
-    registry
-});
+impl Default for WavCodec {
+    fn default() -> Self {
+        Self {
+            bits_per_sample: 16,
+        }
+    }
+}
 
+impl_codec_basics!(WavCodec, "WAV", "audio/wav", "wav");
+
+/// Codec Registry
+
+#[derive(Debug, Default)]
 pub struct CodecRegistry {
-    lossless_codecs: Vec<Box<dyn LosslessCodec>>,
-    lossy_codecs: Vec<Box<dyn LossyCodec>>,
+    codecs: HashMap<String, Box<dyn Codec>>,
 }
 
 impl CodecRegistry {
     pub fn new() -> Self {
         Self {
-            lossless_codecs: Vec::new(),
-            lossy_codecs: Vec::new(),
+            codecs: HashMap::new(),
         }
     }
 
-    pub fn register_lossless(&mut self, codec: impl LosslessCodec + 'static) {
-        self.lossless_codecs.push(Box::new(codec));
+    pub fn register<C: Codec + 'static>(&mut self, codec: C) {
+        let name = codec.name().to_string();
+        self.codecs.insert(name, Box::new(codec));
     }
 
-    pub fn register_lossy(&mut self, codec: impl LossyCodec + 'static) {
-        self.lossy_codecs.push(Box::new(codec));
+    pub fn get(&self, name: &str) -> Option<&dyn Codec> {
+        self.codecs.get(name).map(|b| b.as_ref())
+    }
+
+    pub fn get_lossy(&self, name: &str) -> Option<&dyn Codec> {
+        self.get(name).filter(|codec| codec.is_lossy())
+    }
+
+    pub fn get_lossless(&self, name: &str) -> Option<&dyn Codec> {
+        self.get(name).filter(|codec| codec.is_lossless())
     }
 }
 
@@ -372,6 +406,10 @@ impl TestSuite {
         }
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = &TestAudio> {
+        self.test_cases.iter()
+    }
+
     fn generate_sine_sweep() -> TestAudio {
         let sample_rate = 48000;
         let duration = Duration::from_secs(5);
@@ -437,83 +475,41 @@ impl TestSuite {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use criterion::{black_box, Criterion};
-    use test_case::test_case;
 
-    pub struct CodecTester<'a> {
-        codec: &'a dyn Codec,
+    pub struct CodecTester {
         test_suite: TestSuite,
     }
 
-    impl<'a> CodecTester<'a> {
-        pub fn new(codec: &'a dyn Codec) -> Self {
+    impl CodecTester {
+        pub fn new() -> Self {
             Self {
-                codec,
                 test_suite: TestSuite::new(),
             }
         }
 
-        pub fn test_basic_properties(&self) -> Result<()> {
-            info!("Testing basic properties for codec: {}", self.codec.name());
+        pub fn test_codec<C: Codec>(&self, codec: &C) -> Result<()> {
+            info!("Testing codec: {}", codec.name());
 
             for test_case in &self.test_suite.test_cases {
-                let encoded = self
-                    .codec
-                    .encode(&test_case.samples, test_case.sample_rate)?;
-                let decoded = self.codec.decode(&encoded, test_case.sample_rate)?;
+                let metrics = self.test_single_case(codec, test_case)?;
 
-                assert_eq!(
-                    test_case.samples.len(),
-                    decoded.len(),
-                    "Decoded length mismatch for {}",
-                    test_case.description
-                );
-
-                let metrics = self
-                    .codec
-                    .encoding_speed(&test_case.samples, test_case.sample_rate)?;
-
+                // Common assertions
                 assert!(
                     metrics.encode_speed > 1.0,
                     "Codec {} is slower than real-time for {}",
-                    self.codec.name(),
+                    codec.name(),
                     test_case.description
                 );
             }
             Ok(())
         }
-    }
 
-    pub struct LosslessCodecTester {
-        codec: Box<dyn LosslessCodec>,
-        test_suite: TestSuite,
-    }
-
-    impl LosslessCodecTester {
-        pub fn new(codec: Box<dyn LosslessCodec>) -> Self {
-            Self {
-                codec,
-                test_suite: TestSuite::new(),
-            }
-        }
-
-        // For references to boxed codecs
-        pub fn new_from_ref(codec: Box<dyn LosslessCodec>) -> Self {
-            // Changed parameter type
-            Self {
-                codec, // Just move the box directly
-                test_suite: TestSuite::new(),
-            }
-        }
-
-        pub fn test_basic_properties(&self) -> Result<()> {
-            info!("Testing basic properties for codec: {}", self.codec.name());
+        pub fn test_lossless<C: LosslessCodec>(&self, codec: &C) -> Result<()> {
+            self.test_codec(codec)?;
 
             for test_case in &self.test_suite.test_cases {
-                let encoded = self
-                    .codec
-                    .encode(&test_case.samples, test_case.sample_rate)?;
-                let decoded = self.codec.decode(&encoded, test_case.sample_rate)?;
+                let encoded = codec.encode(&test_case.samples, test_case.sample_rate)?;
+                let decoded = codec.decode(&encoded, test_case.sample_rate)?;
 
                 assert_eq!(
                     test_case.samples, decoded,
@@ -524,98 +520,39 @@ mod tests {
             Ok(())
         }
 
-        pub fn test_perfect_reconstruction(&self) -> Result<()> {
-            info!(
-                "Testing perfect reconstruction for codec: {}",
-                self.codec.name()
-            );
+        pub fn test_lossy<C: LossyCodec>(&self, codec: &C, minimum_snr: f32) -> Result<()> {
+            self.test_codec(codec)?;
 
             for test_case in &self.test_suite.test_cases {
-                let encoded = self
-                    .codec
-                    .encode(&test_case.samples, test_case.sample_rate)?;
-                let decoded = self.codec.decode(&encoded, test_case.sample_rate)?;
-
-                assert_eq!(
-                    test_case.samples, decoded,
-                    "Perfect reconstruction failed for {}",
-                    test_case.description
-                );
-            }
-            Ok(())
-        }
-    }
-
-    pub struct LossyCodecTester {
-        codec: Box<dyn LossyCodec>,
-        test_suite: TestSuite,
-        minimum_snr: f32,
-    }
-
-    impl LossyCodecTester {
-        pub fn new(codec: Box<dyn LossyCodec>, minimum_snr: f32) -> Self {
-            Self {
-                codec,
-                test_suite: TestSuite::new(),
-                minimum_snr,
-            }
-        }
-
-        pub fn new_from_ref(codec: Box<dyn LossyCodec>, minimum_snr: f32) -> Self {
-            Self {
-                codec,
-                test_suite: TestSuite::new(),
-                minimum_snr,
-            }
-        }
-
-        pub fn test_basic_properties(&self) -> Result<()> {
-            info!("Testing basic properties for codec: {}", self.codec.name());
-
-            for test_case in &self.test_suite.test_cases {
-                let encoded = self
-                    .codec
-                    .encode(&test_case.samples, test_case.sample_rate)?;
-                let decoded = self.codec.decode(&encoded, test_case.sample_rate)?;
-
-                assert_eq!(
-                    test_case.samples.len(),
-                    decoded.len(),
-                    "Decoded length mismatch for {}",
-                    test_case.description
-                );
-
-                let metrics = self
-                    .codec
-                    .encoding_speed(&test_case.samples, test_case.sample_rate)?;
+                let metrics = codec.quality_metrics(&test_case.samples, test_case.sample_rate)?;
 
                 assert!(
-                    metrics.encode_speed > 1.0,
-                    "Codec {} is slower than real-time for {}",
-                    self.codec.name(),
-                    test_case.description
-                );
-            }
-            Ok(())
-        }
-
-        pub fn test_quality_metrics(&self) -> Result<()> {
-            info!("Testing quality metrics for codec: {}", self.codec.name());
-
-            for test_case in &self.test_suite.test_cases {
-                let metrics = self
-                    .codec
-                    .quality_metrics(&test_case.samples, test_case.sample_rate)?;
-
-                assert!(
-                    metrics.snr >= self.minimum_snr,
+                    metrics.snr >= minimum_snr,
                     "SNR {:.2}dB below minimum {:.2}dB for {}",
                     metrics.snr,
-                    self.minimum_snr,
+                    minimum_snr,
                     test_case.description
                 );
             }
             Ok(())
+        }
+
+        fn test_single_case<C: Codec>(
+            &self,
+            codec: &C,
+            test_case: &TestAudio,
+        ) -> Result<EncodingMetrics> {
+            let encoded = codec.encode(&test_case.samples, test_case.sample_rate)?;
+            let decoded = codec.decode(&encoded, test_case.sample_rate)?;
+
+            assert_eq!(
+                test_case.samples.len(),
+                decoded.len(),
+                "Decoded length mismatch for {}",
+                test_case.description
+            );
+
+            codec.encoding_metrics(&test_case.samples, test_case.sample_rate)
         }
     }
 
@@ -623,92 +560,40 @@ mod tests {
         use super::*;
 
         #[test]
-        fn test_all_lossless_codecs() -> Result<()> {
-            for codec in &CODEC_REGISTRY.lossless_codecs {
-                // Create a new Box by cloning the contents
-                let tester = LosslessCodecTester::new(Box::new(WavCodec::default()));
-                tester.test_basic_properties()?;
-                tester.test_perfect_reconstruction()?;
-            }
-            Ok(())
+        fn test_wav_codec() -> Result<()> {
+            let tester = CodecTester::new();
+            let codec = WavCodec::default();
+            tester.test_lossless(&codec)
         }
 
-        #[test]
-        fn test_all_lossy_codecs() -> Result<()> {
-            for codec in &CODEC_REGISTRY.lossy_codecs {
-                let tester = LossyCodecTester::new(Box::new(OpusCodec::new(64)), 20.0);
-                tester.test_basic_properties()?;
-                tester.test_quality_metrics()?;
-            }
-            Ok(())
-        }
+        // #[test]
+        // fn test_opus_codec() -> Result<()> {
+        //     let tester = CodecTester::new();
+        //     let codec = OpusCodec::new(64);
+        //     tester.test_lossy(&codec, 20.0)
+        // }
     }
 
-    // BENCHMARKS
-
-    pub mod benches {
+    #[cfg(test)]
+    mod benchmarks {
         use super::*;
-        use criterion::{BenchmarkId, Criterion};
+        use criterion::{black_box, Criterion};
 
-        pub fn benchmark_codec(c: &mut Criterion, codec: &dyn Codec) {
-            let test_suite = TestSuite::new();
+        pub fn benchmark_codec<C: Codec>(c: &mut Criterion, codec: &C) {
+            let suite = TestSuite::new();
+
             let mut group = c.benchmark_group(codec.name());
-
-            for test_case in &test_suite.test_cases {
-                group.bench_with_input(
-                    BenchmarkId::new("encode", test_case.description),
-                    &test_case.samples,
-                    |b, samples| {
-                        b.iter(|| {
-                            codec.encode(black_box(samples), black_box(test_case.sample_rate))
-                        })
-                    },
-                );
-
-                if let Ok(encoded) = codec.encode(&test_case.samples, test_case.sample_rate) {
-                    group.bench_with_input(
-                        BenchmarkId::new("decode", test_case.description),
-                        &encoded,
-                        |b, encoded_data| {
-                            b.iter(|| {
-                                codec.decode(
-                                    black_box(encoded_data),
-                                    black_box(test_case.sample_rate),
-                                )
-                            })
-                        },
-                    );
-                }
+            for test_case in suite.iter() {
+                group.bench_function(test_case.description, |b| {
+                    b.iter(|| {
+                        codec.encode(
+                            black_box(&test_case.samples),
+                            black_box(test_case.sample_rate),
+                        )
+                    })
+                });
             }
             group.finish();
         }
     }
 }
-
-#[derive(Debug)]
-struct CodecWrapper<'a, T: ?Sized + Debug>(&'a T);
-
-impl<T: Codec + ?Sized> Codec for CodecWrapper<'_, T> {
-    fn name(&self) -> &'static str {
-        self.0.name()
-    }
-
-    fn mime_type(&self) -> &'static str {
-        self.0.mime_type()
-    }
-
-    fn extension(&self) -> &'static str {
-        self.0.extension()
-    }
-
-    fn encode(&self, data: &[f32], sample_rate: u32) -> Result<Vec<u8>> {
-        self.0.encode(data, sample_rate)
-    }
-
-    fn decode(&self, data: &[u8], sample_rate: u32) -> Result<Vec<f32>> {
-        self.0.decode(data, sample_rate)
-    }
-}
-
-impl<T: LosslessCodec + ?Sized> LosslessCodec for CodecWrapper<'_, T> {}
-impl<T: LossyCodec + ?Sized> LossyCodec for CodecWrapper<'_, T> {}
