@@ -1,3 +1,4 @@
+use std::array::TryFromSliceError;
 use std::io;
 
 #[derive(thiserror::Error, Debug)]
@@ -192,5 +193,13 @@ impl From<cpal::DeviceNameError> for Error {
 impl From<cpal::BuildStreamError> for Error {
     fn from(err: cpal::BuildStreamError) -> Self {
         Error::Audio(AudioError::Stream(err))
+    }
+}
+
+impl From<TryFromSliceError> for Error {
+    fn from(err: TryFromSliceError) -> Self {
+        Error::Audio(AudioError::Codec(CodecError::InvalidData(
+            "Invalid byte slice conversion",
+        )))
     }
 }
