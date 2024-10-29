@@ -1,4 +1,4 @@
-use crate::error::S3Error;
+use crate::error::{S3Error, StorageError};
 use crate::prelude::*;
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::types::StorageClass;
@@ -67,23 +67,22 @@ impl Storage for S3Storage {
     async fn retrieve(&self, timestamp: DateTime<Utc>) -> Result<Vec<u8>> {
         let key = self.generate_key(&timestamp);
 
-        let obj = self
+        let output = self
             .client
             .get_object()
             .bucket(&self.bucket)
             .key(&key)
             .send()
             .await
-            .map_err(|e| S3Error::S3Download(e.to_string()));
+            .map_err(|e| StorageError::S3(S3Error::S3Download(e.to_string())))?;
 
-        let data = obj
+        let bytes = output
             .body
             .collect()
             .await
-            .map_err(|e| S3Error::S3Download(e.to_string()))
-            .into_bytes();
+            .map_err(|e| StorageError::S3(S3Error::S3Download(e.to_string())))?;
 
-        Ok(data.to_vec())
+        Ok(bytes.into_bytes().to_vec())
     }
 
     async fn cleanup(&self, _retention_period: Duration) -> Result<()> {

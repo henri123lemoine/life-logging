@@ -60,9 +60,10 @@ impl Storage for LocalStorage {
             .iter()
             .find(|(file_timestamp, _)| *file_timestamp <= timestamp)
             .map(|(_, path)| path.clone())
-            .ok_or_else(|| LocalError::FileNotFound(timestamp.to_string()));
+            .ok_or_else(|| StorageError::Local(LocalError::FileNotFound(timestamp.to_string())))?;
 
-        fs::read(file_path?).map_err(LocalError::FileRead)
+        fs::read(&file_path)
+            .map_err(|e| StorageError::Local(LocalError::FileRead(e.to_string())).into())
     }
 
     async fn cleanup(&self, retention_period: Duration) -> Result<()> {

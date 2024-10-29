@@ -1,6 +1,6 @@
 use super::{LocalStorage, S3Storage, Storage};
 use crate::audio::buffer::AudioBuffer;
-use crate::audio::encoder::ENCODER_FACTORY;
+use crate::audio::codec::CODEC_FACTORY;
 use crate::error::AudioError;
 use crate::prelude::*;
 use chrono::Utc;
@@ -52,8 +52,8 @@ impl StorageManager {
             data
         };
 
-        let encoder = ENCODER_FACTORY
-            .get_encoder(&self.format)
+        let encoder = CODEC_FACTORY
+            .get(&self.format)
             .ok_or_else(|| AudioError::UnsupportedFormat(self.format.clone()))?;
 
         let encoded_data = encoder.encode(&resampled_data, self.target_sample_rate)?;

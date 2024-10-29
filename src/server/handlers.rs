@@ -1,5 +1,5 @@
 use crate::app_state::AppState;
-use crate::audio::encoder::{AudioEncoder, ENCODER_FACTORY};
+use crate::audio::codec::{Codec, CODEC_FACTORY};
 use crate::audio::visualizer::AudioVisualizer;
 use axum::{
     extract::{Query, State},
@@ -44,8 +44,8 @@ pub async fn test(State(state): State<Arc<AppState>>) -> Json<serde_json::Value>
     }; // ^^ 5ms
 
     let response = {
-        let encoder = ENCODER_FACTORY.get_encoder("wav").unwrap();
-        encode_and_respond(state, encoder, None).await
+        let codec = CODEC_FACTORY.get("wav").unwrap();
+        encode_and_respond(state, codec, None).await
     }; // ^^ 140ms
     info!("Test response: {:?}", response);
 
@@ -86,8 +86,8 @@ pub async fn get_audio(
         .and_then(|d| d.parse::<f32>().ok())
         .map(Duration::from_secs_f32);
 
-    match ENCODER_FACTORY.get_encoder(&format) {
-        Some(encoder) => encode_and_respond(state, encoder, duration).await,
+    match CODEC_FACTORY.get(&format) {
+        Some(codec) => encode_and_respond(state, codec, duration).await,
         None => (
             StatusCode::BAD_REQUEST,
             [(header::CONTENT_TYPE, "application/json")],
@@ -99,20 +99,20 @@ pub async fn get_audio(
 
 async fn encode_and_respond(
     state: Arc<AppState>,
-    encoder: &dyn AudioEncoder,
+    codec: &dyn Codec,
     duration: Option<Duration>,
 ) -> Response {
     let audio_buffer = state.audio_buffer.read().await;
     let data = audio_buffer.read(duration);
     let sample_rate = audio_buffer.get_sample_rate();
-    match encoder.encode(&data, sample_rate) {
+    match codec.encode(&data, sample_rate) {
         Ok(encoded_data) => {
             info!("Successfully encoded {} bytes of audio", encoded_data.len());
             (
                 StatusCode::OK,
                 [
-                    (header::CONTENT_TYPE, encoder.mime_type()),
-                    (header::CONTENT_DISPOSITION, encoder.content_disposition()),
+                    (header::CONTENT_TYPE, codec.mime_type()),
+                    (header::CONTENT_DISPOSITION, &codec.content_disposition()),
                 ],
                 encoded_data,
             )
