@@ -1,3 +1,4 @@
+// codec-derive/src/lib.rs
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput};
@@ -44,8 +45,8 @@ pub fn derive_codec(input: TokenStream) -> TokenStream {
         panic!("Codec must be marked as either lossy or lossless");
     }
 
-    // Generate trait implementations
-    let trait_impl = if is_lossy {
+    // Generate the marker trait implementation
+    let marker_impl = if is_lossy {
         quote! {
             impl LossyCodec for #name {
                 fn target_bitrate(&self) -> Option<u32> {
@@ -60,71 +61,112 @@ pub fn derive_codec(input: TokenStream) -> TokenStream {
     };
 
     let expanded = quote! {
+        impl #name {
+            pub const CODEC_NAME: &'static str = #codec_name;
+            pub const MIME_TYPE: &'static str = #mime_type;
+            pub const EXTENSION: &'static str = #extension;
+        }
+
         impl Codec for #name {
             fn name(&self) -> &'static str {
-                #codec_name
+                Self::CODEC_NAME
             }
 
             fn mime_type(&self) -> &'static str {
-                #mime_type
+                Self::MIME_TYPE
             }
 
             fn extension(&self) -> &'static str {
-                #extension
+                Self::EXTENSION
             }
 
             fn encode(&self, data: &[f32], sample_rate: u32) -> Result<Vec<u8>> {
-                let mut buffer = self.write_header(data.len(), sample_rate);
-                let bytes_per_sample = self.bits_per_sample as usize / 8;
-                buffer.reserve(data.len() * bytes_per_sample);
-
-                for &sample in data {
-                    buffer.extend(self.encode_sample(sample));
-                }
-
-                Ok(buffer)
+                self.encode_samples(data, sample_rate)
             }
 
             fn decode(&self, data: &[u8], sample_rate: u32) -> Result<Vec<f32>> {
-                if data.len() < 44 {
-                    return Err(Error::Audio(AudioError::Codec(CodecError::InvalidData(
-                        "WAV header too short",
-                    ))));
-                }
-
-                if &data[0..4] != b"RIFF" || &data[8..12] != b"WAVE" {
-                    return Err(Error::Audio(AudioError::Codec(CodecError::InvalidData(
-                        "Invalid WAV header",
-                    ))));
-                }
-
-                let mut offset = 12;
-                while offset + 8 <= data.len() {
-                    let chunk_id = &data[offset..offset + 4];
-                    let chunk_size = u32::from_le_bytes(data[offset + 4..offset + 8].try_into().unwrap());
-
-                    if chunk_id == b"data" {
-                        let data_offset = offset + 8;
-                        let bytes_per_sample = self.bits_per_sample as usize / 8;
-                        let mut samples = Vec::new();
-
-                        for chunk in data[data_offset..].chunks_exact(bytes_per_sample) {
-                            samples.push(self.decode_sample(chunk)?);
-                        }
-
-                        return Ok(samples);
-                    }
-
-                    offset += 8 + chunk_size as usize;
-                }
-
-                Err(Error::Audio(AudioError::Codec(CodecError::InvalidData(
-                    "No data chunk found",
-                ))))
+                self.decode_samples(data, sample_rate)
             }
         }
 
-        #trait_impl
+        #marker_impl
+
+        #[cfg(test)]
+        mod tests {
+            use super::*;
+            use crate::audio::codec::test_utils::TestSignal;
+
+            #[test]
+            fn test_basic_reconstruction() -> Result<()> {
+                let codec = #name::default();
+                let signal = TestSignal::unit_test();
+
+                println!("\nTesting {} codec with basic signal", #codec_name);
+                let encoded = codec.encode(&signal.samples, signal.sample_rate)?;
+                println!("Encoded size: {} bytes", encoded.len());
+                let decoded = codec.decode(&encoded, signal.sample_rate)?;
+
+                assert_eq!(signal.samples.len(), decoded.len(), "Length mismatch");
+
+                println!("\nSample comparison (original → decoded):");
+                println!("{:>8} {:>12} {:>12} {:>12}", "Index", "Original", "Decoded", "Diff");
+                println!("{:-^47}", "");
+
+                for (i, (original, decoded)) in signal.samples.iter().zip(decoded.iter()).enumerate() {
+                    let diff = (original - decoded).abs();
+                    println!(
+                        "{:>8} {:>12.6} {:>12.6} {:>12.6}",
+                        i, original, decoded, diff
+                    );
+
+                    let tolerance = if #is_lossy { 1.0 / 100.0 } else { 1.0 / 32768.0 };
+                    assert!(
+                        diff < tolerance,
+                        "Sample {} differs too much: {} vs {} (diff: {}, tolerance: {})",
+                        i, original, decoded, diff, tolerance
+                    );
+                }
+
+                Ok(())
+            }
+
+            #[test]
+            fn test_performance() -> Result<()> {
+                let codec = #name::default();
+                let signal = TestSignal::sine(44100, 440.0, 1.0);
+                println!("\nTesting {} codec performance", #codec_name);
+
+                let perf = codec.measure_performance(&signal.samples, signal.sample_rate)?;
+
+                println!("\nPerformance metrics:");
+                println!("Encode speed: {:.2}x realtime", perf.encode_speed);
+                println!("Decode speed: {:.2}x realtime", perf.decode_speed);
+                println!("Compression ratio: {:.2}:1", perf.compression_ratio);
+
+                assert!(
+                    perf.encode_speed > 1.0,
+                    "Encoding too slow: {:.2}x realtime",
+                    perf.encode_speed
+                );
+                assert!(
+                    perf.decode_speed > 1.0,
+                    "Decoding too slow: {:.2}x realtime",
+                    perf.decode_speed
+                );
+
+                Ok(())
+            }
+
+            #[test]
+            fn test_codec_properties() {
+                let codec = #name::default();
+                println!("\n{} codec properties:", #codec_name);
+                println!("Name: {}", codec.name());
+                println!("MIME type: {}", codec.mime_type());
+                println!("File extension: {}", codec.extension());
+                println!("Type: {}", if #is_lossy { "Lossy" } else { "Lossless" });
+            }
+        }
     };
 
     TokenStream::from(expanded)
