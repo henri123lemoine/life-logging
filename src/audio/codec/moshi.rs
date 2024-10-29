@@ -78,10 +78,11 @@ impl CodecImpl for MoshiCodec {
         // 1. Resample to Moshi's required rate
         let resampled = self.resample(data, input_rate, MOSHI_SAMPLE_RATE);
 
-        // 2. Pad to required frame size
+        // 2. Pad to required frame size with explicit size tracking
         let padded = self.pad_to_frame_size(&resampled);
+        let original_len = resampled.len(); // Store original length for later
 
-        // 3. Create properly shaped input tensor (batch_size=1, channels=1, samples)
+        // 3. Create properly shaped input tensor
         let input_tensor = Tensor::from_slice(&padded, (1, 1, padded.len()), &self.device)
             .map_err(|e| CodecError::Encoding(format!("Failed to create input tensor: {}", e)))?;
 
@@ -93,43 +94,43 @@ impl CodecImpl for MoshiCodec {
             .encode(&input_tensor)
             .map_err(|e| CodecError::Encoding(format!("Moshi encoding failed: {}", e)))?;
 
-        // 5. Convert to bytes with shape information
-        let shape: Vec<usize> = encoded.shape().dims().to_vec();
-        let encoded_flat = encoded
+        // 5. Convert to bytes, storing metadata
+        let shape = encoded.shape().dims().to_vec();
+        let encoded_data = encoded
+            .to_dtype(DType::U8)
+            .map_err(|e| CodecError::Encoding(format!("Failed to convert tensor to U8: {}", e)))?
             .flatten_all()
             .map_err(|e| CodecError::Encoding(format!("Failed to flatten tensor: {}", e)))?
             .to_vec1::<u8>()
             .map_err(|e| CodecError::Encoding(format!("Failed to convert to bytes: {}", e)))?;
 
-        // 6. Serialize shape and data
+        // 6. Serialize metadata and data
         let mut output = Vec::new();
+        // Store original length for proper reconstruction
+        output.extend_from_slice(&(original_len as u32).to_le_bytes());
+        // Store tensor shape
         output.extend_from_slice(&(shape.len() as u32).to_le_bytes());
         for dim in shape {
             output.extend_from_slice(&(dim as u32).to_le_bytes());
         }
-        output.extend_from_slice(&(encoded_flat.len() as u32).to_le_bytes());
-        output.extend(encoded_flat);
+        // Store encoded data
+        output.extend_from_slice(&(encoded_data.len() as u32).to_le_bytes());
+        output.extend(encoded_data);
 
         Ok(output)
     }
 
     fn decode_samples(&self, data: &[u8], output_rate: u32) -> Result<Vec<f32>> {
-        // 1. Deserialize shape and data
-        if data.len() < 4 {
-            return Err(CodecError::Decoding("Invalid data length".into()).into());
-        }
-
         let mut offset = 0;
 
-        // Read number of dimensions
+        // 1. Read original length
+        let original_len = u32::from_le_bytes(data[offset..offset + 4].try_into()?) as usize;
+        offset += 4;
+
+        // 2. Read shape
         let ndim = u32::from_le_bytes(data[offset..offset + 4].try_into()?) as usize;
         offset += 4;
 
-        if offset + ndim * 4 + 4 > data.len() {
-            return Err(CodecError::Decoding("Invalid shape data".into()).into());
-        }
-
-        // Read shape
         let mut shape = Vec::with_capacity(ndim);
         for _ in 0..ndim {
             let dim = u32::from_le_bytes(data[offset..offset + 4].try_into()?) as usize;
@@ -137,7 +138,7 @@ impl CodecImpl for MoshiCodec {
             offset += 4;
         }
 
-        // Read data length
+        // 3. Read data length and data
         let data_len = u32::from_le_bytes(data[offset..offset + 4].try_into()?) as usize;
         offset += 4;
 
@@ -145,13 +146,13 @@ impl CodecImpl for MoshiCodec {
             return Err(CodecError::Decoding("Invalid data length".into()).into());
         }
 
-        // 2. Create input tensor with correct shape
+        // 4. Create input tensor
         let encoded_tensor =
             Tensor::from_slice(&data[offset..offset + data_len], shape, &self.device).map_err(
                 |e| CodecError::Decoding(format!("Failed to create input tensor: {}", e)),
             )?;
 
-        // 3. Decode using model
+        // 5. Decode using model
         let decoded = self
             .model
             .lock()
@@ -159,19 +160,16 @@ impl CodecImpl for MoshiCodec {
             .decode(&encoded_tensor)
             .map_err(|e| CodecError::Decoding(format!("Moshi decoding failed: {}", e)))?;
 
-        // 4. Convert decoded tensor to samples
+        // 6. Convert to samples and trim to original length
         let mut samples = decoded
             .flatten_all()
             .map_err(|e| CodecError::Decoding(format!("Failed to flatten decoded tensor: {}", e)))?
             .to_vec1::<f32>()
             .map_err(|e| CodecError::Decoding(format!("Failed to convert to samples: {}", e)))?;
 
-        // 5. Remove padding if present
-        while samples.last().map_or(false, |&x| x.abs() < 1e-6) {
-            samples.pop();
-        }
+        samples.truncate(original_len);
 
-        // 6. Resample to target rate if needed
+        // 7. Resample if needed
         if output_rate != MOSHI_SAMPLE_RATE {
             Ok(self.resample(&samples, MOSHI_SAMPLE_RATE, output_rate))
         } else {
