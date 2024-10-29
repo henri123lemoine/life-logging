@@ -196,8 +196,9 @@ impl From<cpal::BuildStreamError> for Error {
     }
 }
 
+// this is sus
 impl From<TryFromSliceError> for Error {
-    fn from(err: TryFromSliceError) -> Self {
+    fn from(_: TryFromSliceError) -> Self {
         Error::Audio(AudioError::Codec(CodecError::InvalidData(
             "Invalid byte slice conversion",
         )))

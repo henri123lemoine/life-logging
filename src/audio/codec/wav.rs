@@ -1,4 +1,4 @@
-use crate::audio::codec::traits::{Codec, CodecImpl, LosslessCodec};
+use crate::audio::codec::traits::{Codec, CodecImpl};
 use crate::error::{AudioError, CodecError};
 use crate::prelude::*;
 use codec_derive::Codec;

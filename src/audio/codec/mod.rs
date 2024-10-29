@@ -3,9 +3,10 @@ pub mod test_utils;
 pub mod traits;
 
 // codecs
+mod flac;
+mod moshi;
+mod opus;
 mod wav;
-// mod flac;
-// mod opus;
 
 pub use factory::CODEC_FACTORY;
 pub use traits::Codec;

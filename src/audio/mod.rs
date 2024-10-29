@@ -1,4 +1,4 @@
 pub mod buffer;
-pub mod encoder;
+pub mod codec;
 pub mod processor;
 pub mod visualizer;
