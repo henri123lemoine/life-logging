@@ -5,17 +5,9 @@ use rand::prelude::*;
 use std::path::PathBuf;
 use std::time::Duration;
 
-#[derive(Debug, Clone)]
-pub struct AudioTestCase {
-    pub name: String,
-    pub samples: Vec<f32>,
-    pub sample_rate: u32,
-    pub duration: Duration,
-    pub category: AudioCategory,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum AudioCategory {
+    #[default]
     Noise,
     Speech,
     Music,
@@ -30,45 +22,22 @@ impl std::fmt::Display for AudioCategory {
             Self::Speech => write!(f, "Speech"),
             Self::Music => write!(f, "Music"),
             Self::Synthetic => write!(f, "Synthetic"),
-            Self::Custom(name) => write!(f, "Custom({})", name),
+            Self::Custom(name) => write!(f, "{}", name),
         }
     }
 }
 
-#[derive(Debug)]
-pub struct TestSignal {
+#[derive(Debug, Default)]
+pub struct AudioTestCase {
+    pub name: String,
     pub samples: Vec<f32>,
     pub sample_rate: u32,
-    pub description: &'static str,
-}
-
-impl TestSignal {
-    pub fn resample(&self, new_rate: u32) -> Vec<f32> {
-        if self.sample_rate == new_rate {
-            return self.samples.clone();
-        }
-
-        let ratio = new_rate as f32 / self.sample_rate as f32;
-        let new_len = (self.samples.len() as f32 * ratio) as usize;
-        let mut resampled = Vec::with_capacity(new_len);
-
-        for i in 0..new_len {
-            let src_idx = i as f32 / ratio;
-            let src_idx_floor = src_idx.floor() as usize;
-            let src_idx_ceil = (src_idx_floor + 1).min(self.samples.len() - 1);
-            let frac = src_idx - src_idx.floor();
-
-            let sample =
-                self.samples[src_idx_floor] * (1.0 - frac) + self.samples[src_idx_ceil] * frac;
-            resampled.push(sample);
-        }
-
-        resampled
-    }
+    pub duration: Duration,
+    pub category: AudioCategory,
 }
 
 pub struct AudioTestSuite {
-    pub(crate) cases: Vec<AudioTestCase>,
+    cases: Vec<AudioTestCase>,
 }
 
 impl AudioTestSuite {
@@ -88,16 +57,33 @@ impl AudioTestSuite {
         let mut suite = Self::new();
 
         // Add synthetic test cases
-        suite.add_case(Self::generate_sine_sweep(48000, 2.0, "Sine Sweep")?);
-        suite.add_case(Self::generate_multitone(48000, 2.0, "Multitone")?);
+        suite.add_case(Self::generate_sine_sweep(
+            48000,
+            2.0,
+            "Sine Sweep",
+            AudioCategory::Synthetic,
+        )?);
+        suite.add_case(Self::generate_multitone(
+            48000,
+            2.0,
+            "Multitone",
+            AudioCategory::Synthetic,
+        )?);
+        suite.add_case(Self::generate_white_noise(
+            48000,
+            2.0,
+            "White Noise",
+            AudioCategory::Noise,
+        )?);
+        suite.add_case(Self::generate_pink_noise(
+            48000,
+            2.0,
+            "Pink Noise",
+            AudioCategory::Noise,
+        )?);
 
-        // Add noise test cases with lower weights for quality metrics
-        suite.add_case(Self::generate_white_noise(48000, 2.0, "White Noise")?);
-        suite.add_case(Self::generate_pink_noise(48000, 2.0, "Pink Noise")?);
-
-        // Load real audio samples
+        // Load voice sample if available
         let test_data_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("data");
-
         if let Ok(voice_data) = std::fs::read(test_data_dir.join("test_voice.wav")) {
             let mut reader = hound::WavReader::new(std::io::Cursor::new(voice_data))
                 .map_err(|e| Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
@@ -123,9 +109,7 @@ impl AudioTestSuite {
                 name: "Test Voice".to_string(),
                 samples,
                 sample_rate,
-                duration: std::time::Duration::from_secs_f32(
-                    sample_len as f32 / sample_rate as f32,
-                ),
+                duration: Duration::from_secs_f32(sample_len as f32 / sample_rate as f32),
                 category: AudioCategory::Speech,
             });
         } else {
@@ -135,7 +119,12 @@ impl AudioTestSuite {
         Ok(suite)
     }
 
-    fn generate_white_noise(sample_rate: u32, duration: f32, name: &str) -> Result<AudioTestCase> {
+    fn generate_white_noise(
+        sample_rate: u32,
+        duration: f32,
+        name: &str,
+        category: AudioCategory,
+    ) -> Result<AudioTestCase> {
         let num_samples = (sample_rate as f32 * duration) as usize;
         let mut rng = rand::thread_rng();
         let samples: Vec<f32> = (0..num_samples)
@@ -151,7 +140,12 @@ impl AudioTestSuite {
         })
     }
 
-    fn generate_pink_noise(sample_rate: u32, duration: f32, name: &str) -> Result<AudioTestCase> {
+    fn generate_pink_noise(
+        sample_rate: u32,
+        duration: f32,
+        name: &str,
+        category: AudioCategory,
+    ) -> Result<AudioTestCase> {
         let num_samples = (sample_rate as f32 * duration) as usize;
         let mut rng = rand::thread_rng();
 
@@ -179,7 +173,12 @@ impl AudioTestSuite {
         })
     }
 
-    fn generate_sine_sweep(sample_rate: u32, duration: f32, name: &str) -> Result<AudioTestCase> {
+    fn generate_sine_sweep(
+        sample_rate: u32,
+        duration: f32,
+        name: &str,
+        category: AudioCategory,
+    ) -> Result<AudioTestCase> {
         let num_samples = (sample_rate as f32 * duration) as usize;
         let mut samples = Vec::with_capacity(num_samples);
 
@@ -195,11 +194,16 @@ impl AudioTestSuite {
             samples,
             sample_rate,
             duration: Duration::from_secs_f32(duration),
-            category: AudioCategory::Synthetic,
+            category,
         })
     }
 
-    fn generate_multitone(sample_rate: u32, duration: f32, name: &str) -> Result<AudioTestCase> {
+    fn generate_multitone(
+        sample_rate: u32,
+        duration: f32,
+        name: &str,
+        category: AudioCategory,
+    ) -> Result<AudioTestCase> {
         let num_samples = (sample_rate as f32 * duration) as usize;
         let frequencies = [440.0, 880.0, 1760.0, 3520.0];
         let mut samples = vec![0.0; num_samples];
@@ -264,7 +268,7 @@ impl AudioTestSuite {
 pub struct AudioQualityMetrics {
     pub snr: f32,
     pub mse: f32,
-    pub max_abs_error: f32,
+    pub max_error: f32,
     pub correlation: f32,
 }
 
@@ -274,7 +278,7 @@ impl AudioQualityMetrics {
         let orig = &original[..len];
         let dec = &decoded[..len];
 
-        // Calculate MSE and max error all at once
+        // Calculate MSE and max error
         let (mse_sum, max_error) =
             orig.iter()
                 .zip(dec.iter())
@@ -286,9 +290,8 @@ impl AudioQualityMetrics {
 
         let mse = mse_sum / len as f32;
 
-        // Calculate signal power and SNR
-        let signal_power = orig.iter().map(|&x| x.powi(2)).sum::<f32>() / len as f32;
-
+        // Calculate SNR
+        let signal_power = orig.iter().map(|x| x.powi(2)).sum::<f32>() / len as f32;
         let snr = if mse > 0.0 {
             10.0 * (signal_power / mse).log10()
         } else {
@@ -321,7 +324,7 @@ impl AudioQualityMetrics {
         Self {
             snr,
             mse,
-            max_abs_error: max_error,
+            max_error,
             correlation,
         }
     }

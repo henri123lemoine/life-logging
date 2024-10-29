@@ -139,7 +139,7 @@ fn generate_test_module(
                     println!("Quality metrics for {}:", test_case.name);
                     println!("  SNR: {:.1} dB", metrics.snr);
                     println!("  MSE: {:.6}", metrics.mse);
-                    println!("  Max error: {:.6}", metrics.max_abs_error);
+                    println!("  Max error: {:.6}", metrics.max_error);
                     println!("  Correlation: {:.6}", metrics.correlation);
 
                     if #is_lossy {
@@ -170,9 +170,9 @@ fn generate_test_module(
                         }
                     } else {
                                 assert!(
-                            metrics.max_abs_error < EPSILON,
+                            metrics.max_error < EPSILON,
                             "{}: Non-zero error in lossless codec: {}",
-                            test_case.name, metrics.max_abs_error
+                            test_case.name, metrics.max_error
                         );
                     }
                 }
