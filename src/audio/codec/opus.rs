@@ -64,13 +64,10 @@ impl CodecImpl for OpusCodec {
         let mut temp_wav = NamedTempFile::new()
             .map_err(|e| CodecError::Encoding(format!("Failed to create temp WAV file: {}", e)))?;
 
-        // Convert to WAV
         let wav_data = WavCodec::default().encode(&resampled_data, self.sample_rate)?;
-        temp_wav
-            .write_all(&wav_data)
-            .map_err(|e| CodecError::Encoding(format!("Failed to write WAV data: {}", e)))?;
+        temp_wav.write_all(&wav_data)?;
 
-        // Use FFmpeg to encode to Opus
+        // Use FFmpeg with better quality settings
         let output = Command::new("ffmpeg")
             .arg("-i")
             .arg(temp_wav.path())
@@ -78,15 +75,20 @@ impl CodecImpl for OpusCodec {
             .arg("libopus")
             .arg("-b:a")
             .arg(format!("{}k", self.bitrate))
+            .arg("-compression_level")
+            .arg("10") // Maximum quality
+            .arg("-frame_duration")
+            .arg("20") // Lower latency
+            .arg("-application")
+            .arg("audio") // Optimize for audio quality
             .arg("-ar")
             .arg(self.sample_rate.to_string())
             .arg("-ac")
-            .arg("1") // Force mono
+            .arg("1")
             .arg("-f")
             .arg("opus")
             .arg("-")
-            .output()
-            .map_err(|e| CodecError::Encoding(format!("Failed to execute FFmpeg: {}", e)))?;
+            .output()?;
 
         if !output.status.success() {
             let error_message = String::from_utf8_lossy(&output.stderr);
@@ -96,11 +98,6 @@ impl CodecImpl for OpusCodec {
             );
         }
 
-        info!(
-            "Encoded {} samples to {}k Opus",
-            resampled_data.len(),
-            self.bitrate
-        );
         Ok(output.stdout)
     }
 
