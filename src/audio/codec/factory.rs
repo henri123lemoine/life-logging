@@ -1,3 +1,6 @@
+use super::flac::FlacCodec;
+use super::moshi::MoshiCodec;
+use super::opus::OpusCodec;
 use super::traits::Codec;
 use super::wav::WavCodec;
 use once_cell::sync::Lazy;
@@ -17,7 +20,18 @@ impl CodecFactory {
             "wav".into(),
             Arc::new(WavCodec::default()) as Arc<dyn Codec>,
         );
-        // etc
+        codecs.insert(
+            "flac".into(),
+            Arc::new(FlacCodec::default()) as Arc<dyn Codec>,
+        );
+        codecs.insert(
+            "opus".into(),
+            Arc::new(OpusCodec::default()) as Arc<dyn Codec>,
+        );
+        codecs.insert(
+            "moshi".into(),
+            Arc::new(MoshiCodec::default()) as Arc<dyn Codec>,
+        );
 
         Self { codecs }
     }
