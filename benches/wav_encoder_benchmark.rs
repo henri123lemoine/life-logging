@@ -83,6 +83,10 @@ impl AudioEncoder for OptimizedWavEncoder {
         Ok(buffer)
     }
 
+    fn decode(&self, _data: &[u8], _sampling_rate: u32) -> Result<Vec<f32>> {
+        todo!()
+    }
+
     fn mime_type(&self) -> &'static str {
         "audio/wav"
     }
