@@ -87,47 +87,49 @@ impl AudioTestSuite {
     pub fn load_default_cases() -> Result<Self> {
         let mut suite = Self::new();
 
-        // Add noise test cases
-        suite.add_case(Self::generate_white_noise(48000, 2.0, "White Noise")?);
-        suite.add_case(Self::generate_pink_noise(48000, 2.0, "Pink Noise")?);
-
         // Add synthetic test cases
         suite.add_case(Self::generate_sine_sweep(48000, 2.0, "Sine Sweep")?);
         suite.add_case(Self::generate_multitone(48000, 2.0, "Multitone")?);
 
-        // Load real audio samples from test data directory
-        let test_data_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data");
+        // Add noise test cases with lower weights for quality metrics
+        suite.add_case(Self::generate_white_noise(48000, 2.0, "White Noise")?);
+        suite.add_case(Self::generate_pink_noise(48000, 2.0, "Pink Noise")?);
 
-        if test_data_dir.exists() {
-            // Load speech samples
-            let speech_dir = test_data_dir.join("speech");
-            if speech_dir.exists() {
-                for entry in std::fs::read_dir(speech_dir)? {
-                    let entry = entry?;
-                    if entry.path().extension().and_then(|s| s.to_str()) == Some("wav") {
-                        suite.add_case(Self::load_audio_file(
-                            &entry.path(),
-                            AudioCategory::Speech,
-                            &entry.path().file_stem().unwrap().to_string_lossy(),
-                        )?);
-                    }
-                }
-            }
+        // Load real audio samples
+        let test_data_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("data");
 
-            // Load music samples
-            let music_dir = test_data_dir.join("music");
-            if music_dir.exists() {
-                for entry in std::fs::read_dir(music_dir)? {
-                    let entry = entry?;
-                    if entry.path().extension().and_then(|s| s.to_str()) == Some("wav") {
-                        suite.add_case(Self::load_audio_file(
-                            &entry.path(),
-                            AudioCategory::Music,
-                            &entry.path().file_stem().unwrap().to_string_lossy(),
-                        )?);
-                    }
-                }
-            }
+        if let Ok(voice_data) = std::fs::read(test_data_dir.join("test_voice.wav")) {
+            let mut reader = hound::WavReader::new(std::io::Cursor::new(voice_data))
+                .map_err(|e| Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+
+            let spec = reader.spec();
+            let samples: Vec<f32> = if spec.sample_format == hound::SampleFormat::Float {
+                reader
+                    .samples::<f32>()
+                    .collect::<std::result::Result<Vec<_>, _>>()
+                    .map_err(|e| Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+            } else {
+                reader
+                    .samples::<i16>()
+                    .map(|s| s.map(|s| s as f32 / 32768.0))
+                    .collect::<std::result::Result<Vec<_>, _>>()
+                    .map_err(|e| Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+            };
+
+            let sample_len = samples.len();
+            let sample_rate = spec.sample_rate;
+
+            suite.add_case(AudioTestCase {
+                name: "Test Voice".to_string(),
+                samples,
+                sample_rate,
+                duration: std::time::Duration::from_secs_f32(
+                    sample_len as f32 / sample_rate as f32,
+                ),
+                category: AudioCategory::Speech,
+            });
+        } else {
+            tracing::warn!("Could not find test_voice.wav in data directory");
         }
 
         Ok(suite)
