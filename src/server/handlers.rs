@@ -99,7 +99,7 @@ pub async fn get_audio(
 
 async fn encode_and_respond(
     state: Arc<AppState>,
-    codec: &dyn Codec,
+    codec: Arc<dyn Codec>,
     duration: Option<Duration>,
 ) -> Response {
     let audio_buffer = state.audio_buffer.read().await;

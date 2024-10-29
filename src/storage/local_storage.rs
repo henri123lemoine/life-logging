@@ -20,6 +20,7 @@ pub struct LocalStorage {
 impl LocalStorage {
     pub fn new(storage_path: PathBuf, format: String) -> Result<Self> {
         fs::create_dir_all(&storage_path).map_err(LocalError::DirectoryCreation);
+
         Ok(Self {
             storage_path,
             format,

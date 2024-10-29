@@ -58,7 +58,7 @@ impl Storage for S3Storage {
             .storage_class(StorageClass::GlacierIr)
             .send()
             .await
-            .map_err(|e| S3Error::S3Upload(e.to_string()));
+            .map_err(|e| StorageError::S3(S3Error::S3Upload(e.to_string())))?;
 
         info!("Uploaded audio data to S3: {}", key);
         Ok(())
